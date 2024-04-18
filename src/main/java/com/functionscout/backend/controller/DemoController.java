@@ -1,8 +1,10 @@
 package com.functionscout.backend.controller;
 
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+@CrossOrigin
 @RestController
 public class DemoController {
 
@@ -10,8 +12,8 @@ public class DemoController {
 
     }
 
-    @GetMapping("/demo")
+    @GetMapping("/test")
     public String getDemoResponse() {
-        return "This is function scout demo backend";
+        return "Function Scout Backend";
     }
 }

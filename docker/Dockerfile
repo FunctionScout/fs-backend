@@ -1,6 +1,15 @@
-FROM eclipse-temurin:17-jdk-focal
+#
+# Build stage
+#
+FROM maven:3.6.0-jdk-11-slim AS build
+COPY src /home/app/src
+COPY pom.xml /home/app
+RUN mvn -f /home/app/pom.xml clean package
 
-WORKDIR /app
-
-COPY *.jar app.jar
-CMD ["java", "-jar", "app.jar"]
+#
+# Package stage
+#
+FROM openjdk:11-jre-slim
+COPY --from=build /home/app/target/backend-0.0.1-SNAPSHOT.jar /usr/local/lib/backend.jar
+EXPOSE 8080
+ENTRYPOINT ["java","-jar","/usr/local/lib/backend.jar"]
