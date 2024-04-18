@@ -6,7 +6,8 @@ ENV HOME=/usr/app
 RUN mkdir -p $HOME
 WORKDIR $HOME
 ADD . $HOME
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -f $HOME/pom.xml clean package
+RUN apt-get update && apt-get install maven -y
+RUN mvn -f $HOME/pom.xml clean package
 
 #
 # Package stage
