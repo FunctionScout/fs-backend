@@ -19,7 +19,6 @@ import java.util.concurrent.Executor;
 public class FunctionScoutBackendApplication {
 
     public static void main(String[] args) {
-        System.out.println("DB URL: " + System.getenv("FS_DB_URL"));
         SpringApplication.run(FunctionScoutBackendApplication.class, args);
     }
 
