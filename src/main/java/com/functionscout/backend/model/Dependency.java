@@ -4,34 +4,35 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.ManyToMany;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.springframework.beans.factory.annotation.Autowired;
 
 import java.sql.Timestamp;
-import java.time.Instant;
+import java.util.HashSet;
+import java.util.Set;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @Entity
-public class Component {
+public class Dependency {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
     private String name;
 
-    private String githubUrl;
+    private String version;
+
+    private Short type;
 
     private Timestamp createDT;
 
-    @Autowired
-    public Component(final String name, final String githubUrl) {
-        this.name = name;
-        this.githubUrl = githubUrl;
-        this.createDT = Timestamp.from(Instant.now());
-    }
+    private Timestamp updateDT;
+
+    @ManyToMany(mappedBy = "dependencies")
+    private Set<WebService> webServices = new HashSet<>();
 }

@@ -9,6 +9,6 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardResponseDTO {
-    private String githubURL;
+public class WebServiceRequest {
+    private String githubUrl;
 }

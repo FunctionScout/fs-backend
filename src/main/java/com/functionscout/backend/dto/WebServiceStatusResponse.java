@@ -5,14 +5,15 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.util.List;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class ServiceResponseDTO {
-    private String name;
+public class WebServiceStatusResponse {
+
     private String githubUrl;
-    private List<Dependency> dependencies;
+    private String status;
+    private LocalDateTime createdDateTime;
 }

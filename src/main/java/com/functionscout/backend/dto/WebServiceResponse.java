@@ -5,10 +5,14 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
+
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class AddServiceDTO {
-    private String githubURL;
+public class WebServiceResponse {
+    private String name;
+    private String githubUrl;
+    private List<DependencyDTO> dependencies;
 }
