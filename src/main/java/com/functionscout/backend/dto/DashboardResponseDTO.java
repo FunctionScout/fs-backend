@@ -10,5 +10,6 @@ import lombok.Setter;
 @NoArgsConstructor
 @AllArgsConstructor
 public class DashboardResponseDTO {
+    private String id;
     private String githubURL;
 }

@@ -9,7 +9,7 @@ import java.util.Optional;
 @Repository
 public interface WebServiceRepository extends JpaRepository<WebService, Integer> {
 
-    Optional<WebService> findComponentByGithubUrl(String githubUrl);
+    Optional<WebService> findWebServiceByUuid(String serviceId);
 
     boolean existsByGithubUrl(String githubUrl);
 }

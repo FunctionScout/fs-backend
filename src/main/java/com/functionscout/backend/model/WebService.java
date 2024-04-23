@@ -16,6 +16,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.UUID;
 
 @Getter
 @Setter
@@ -26,6 +27,9 @@ public class WebService {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
+
+    private String uuid;
+
     private String githubUrl;
 
     private Timestamp createDT;
@@ -38,6 +42,7 @@ public class WebService {
 
     @Autowired
     public WebService(final String githubUrl) {
+        this.uuid = UUID.randomUUID().toString();
         this.githubUrl = githubUrl;
         this.createDT = Timestamp.from(Instant.now());
     }

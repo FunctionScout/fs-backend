@@ -1,5 +1,6 @@
 package com.functionscout.backend.dto;
 
+import com.functionscout.backend.model.Dependency;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -12,7 +13,6 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class WebServiceResponse {
-    private String name;
     private String githubUrl;
     private List<DependencyDTO> dependencies;
 }
