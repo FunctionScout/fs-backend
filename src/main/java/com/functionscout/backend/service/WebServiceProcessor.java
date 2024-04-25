@@ -4,9 +4,9 @@ import com.functionscout.backend.client.GithubClient;
 import com.functionscout.backend.dto.DependencyDTO;
 import com.functionscout.backend.dto.GithubPomFileContentResponse;
 import com.functionscout.backend.enums.DependencyType;
-import com.functionscout.backend.model.WebServiceStatus;
+import com.functionscout.backend.enums.Status;
+import com.functionscout.backend.model.WebService;
 import com.functionscout.backend.repository.WebServiceRepository;
-import com.functionscout.backend.repository.WebServiceStatusRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -33,9 +33,6 @@ public class WebServiceProcessor {
     private WebServiceRepository webServiceRepository;
 
     @Autowired
-    private WebServiceStatusRepository webServiceStatusRepository;
-
-    @Autowired
     private GithubClient githubClient;
 
     @Autowired
@@ -51,39 +48,45 @@ public class WebServiceProcessor {
     private String githubAcceptHeader;
 
     @Async
-    public void processGithubUrl(final WebServiceStatus webServiceStatus) {
+    public void processGithubUrl(final WebService webService) {
         // Use Github API to get the repository information
         // After everything is done, insert the record to webservice table and update the status in webservicestatus to success
 
-        Pattern pattern = Pattern.compile("^(https://github.com/)([\\w_-]+)/([\\w.-]+)\\.(git)?$");
-        Matcher matcher = pattern.matcher(webServiceStatus.getGithubUrl());
+        try {
+            Pattern pattern = Pattern.compile("^(https://github.com/)([\\w_-]+)/([\\w.-]+)\\.(git)?$");
+            Matcher matcher = pattern.matcher(webService.getGithubUrl());
 
-        if (!matcher.matches()) {
-            System.out.println("Not matching");
+            if (!matcher.matches()) {
+                System.out.println("Not matching");
+            }
+
+            final String owner = matcher.group(2);
+            final String repository = matcher.group(3);
+
+            final GithubPomFileContentResponse githubPomFileContentResponse = githubClient.getRepositoryContentForFile(
+                    "Bearer " + githubPatToken,
+                    githubApiVersion,
+                    githubAcceptHeader,
+                    owner,
+                    repository,
+                    "pom.xml"
+            );
+
+            final Base64.Decoder decoder = Base64.getMimeDecoder();
+            final String pomContent = new String(
+                    decoder.decode(githubPomFileContentResponse.getContent()),
+                    StandardCharsets.UTF_8
+            );
+
+            extractDependenciesFromPom(webService, pomContent);
+        } catch (Exception ex) {
+            webService.setStatus(Status.FAILED.getCode());
+            webService.setUniqueHash(webService.getUuid());
+            webServiceRepository.save(webService);
         }
-
-        final String owner = matcher.group(2);
-        final String repository = matcher.group(3);
-
-        final GithubPomFileContentResponse githubPomFileContentResponse = githubClient.getRepositoryContentForFile(
-                "Bearer " + githubPatToken,
-                githubApiVersion,
-                githubAcceptHeader,
-                owner,
-                repository,
-                "pom.xml"
-        );
-
-        final Base64.Decoder decoder = Base64.getMimeDecoder();
-        final String pomContent = new String(
-                decoder.decode(githubPomFileContentResponse.getContent()),
-                StandardCharsets.UTF_8
-        );
-
-        extractDependenciesFromPom(webServiceStatus, pomContent);
     }
 
-    private void extractDependenciesFromPom(final WebServiceStatus webServiceStatus, final String pomContent) {
+    private void extractDependenciesFromPom(final WebService webService, final String pomContent) {
         final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         DocumentBuilder builder;
         final List<DependencyDTO> webServiceDependencies = new ArrayList<>();
@@ -120,11 +123,10 @@ public class WebServiceProcessor {
                         DependencyType.EXTERNAL.getType()
                 ));
             }
-
         } catch (Exception ex) {
             throw new RuntimeException(ex.getMessage());
         }
 
-        dependencyService.createDependencies(webServiceStatus, webServiceDependencies);
+        dependencyService.createDependencies(webService, webServiceDependencies);
     }
 }

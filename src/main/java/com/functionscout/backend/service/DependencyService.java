@@ -4,11 +4,9 @@ import com.functionscout.backend.dto.DependencyDTO;
 import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.model.Dependency;
 import com.functionscout.backend.model.WebService;
-import com.functionscout.backend.model.WebServiceStatus;
 import com.functionscout.backend.repository.DependencyRepository;
 import com.functionscout.backend.repository.JdbcDependencyRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
-import com.functionscout.backend.repository.WebServiceStatusRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,23 +25,15 @@ public class DependencyService {
     @Autowired
     private DependencyRepository dependencyRepository;
 
-    @Autowired
-    private WebServiceStatusRepository webServiceStatusRepository;
-
-    public void createDependencies(final WebServiceStatus webServiceStatus,
+    public void createDependencies(final WebService webService,
                                    final List<DependencyDTO> webServiceDependencies) {
         jdbcDependencyRepository.saveAllDependencies(webServiceDependencies);
 
         final List<Dependency> dependencies = jdbcDependencyRepository.getDependencies(webServiceDependencies);
-        WebService webService = new WebService(webServiceStatus.getGithubUrl());
+
+        // TODO: Insert into webservicedependencies separately through a native query
+        webService.setStatus(Status.SUCCESS.getCode());
         webService.setDependencies(new HashSet<>(dependencies));
         webServiceRepository.save(webService);
-
-        // Update the status
-        webServiceStatusRepository.updateWebServiceStatus(
-                Status.SUCCESS.getCode(),
-                webServiceStatus.getId(),
-                webServiceStatus.getGithubUrl()
-        );
     }
 }

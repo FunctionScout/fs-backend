@@ -11,5 +11,6 @@ import lombok.Setter;
 @AllArgsConstructor
 public class DashboardResponseDTO {
     private String id;
-    private String githubURL;
+    private String githubUrl;
+    private String status;
 }
