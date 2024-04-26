@@ -14,5 +14,5 @@ import java.util.List;
 @AllArgsConstructor
 public class WebServiceResponse {
     private String githubUrl;
-    private List<DependencyDTO> dependencies;
+    private List<WebServiceDependencyResponse> dependencies;
 }
