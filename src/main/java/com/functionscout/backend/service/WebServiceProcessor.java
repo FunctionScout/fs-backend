@@ -56,6 +56,7 @@ public class WebServiceProcessor {
             Pattern pattern = Pattern.compile("^(https://github.com/)([\\w_-]+)/([\\w.-]+)\\.(git)?$");
             Matcher matcher = pattern.matcher(webService.getGithubUrl());
 
+            //TODO: Validity of a github url should be checked in webservice and not here
             if (!matcher.matches()) {
                 System.out.println("Not matching");
             }
@@ -80,6 +81,7 @@ public class WebServiceProcessor {
 
             extractDependenciesFromPom(webService, pomContent);
         } catch (Exception ex) {
+            ex.printStackTrace();
             webService.setStatus(Status.FAILED.getCode());
             webService.setUniqueHash(webService.getUuid());
             webServiceRepository.save(webService);
