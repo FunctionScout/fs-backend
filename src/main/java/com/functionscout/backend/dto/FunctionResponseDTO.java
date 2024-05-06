@@ -9,8 +9,9 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class WebServiceDependencyResponse {
+public class FunctionResponseDTO {
+
+    private String id;
     private String name;
-    private String version;
-    private String type;
+    private String clazz;
 }

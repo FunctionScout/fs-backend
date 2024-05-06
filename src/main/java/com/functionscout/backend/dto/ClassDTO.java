@@ -11,7 +11,8 @@ import java.util.List;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class WebServiceResponse<T> {
-    private String githubUrl;
-    private List<T> object;
+public class ClassDTO {
+
+    private String className;
+    private List<FunctionDTO> functionDTOList;
 }
