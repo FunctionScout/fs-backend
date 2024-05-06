@@ -79,7 +79,10 @@ public class WebServiceParser {
     @Async
     public void processGithubUrl(final WebService webService, final String owner, final String repository) {
         try {
-            final String folderName = System.getProperty("java.io.tmpdir") + UUID.randomUUID();
+            final String tempDirectory = System.getProperty("java.io.tmpdir");
+            final String folderName = tempDirectory.charAt(tempDirectory.length() - 1) == '/'
+                    ? tempDirectory + UUID.randomUUID()
+                    : tempDirectory + "/" + UUID.randomUUID();
 
             log.info("Folder name: " + folderName);
 
