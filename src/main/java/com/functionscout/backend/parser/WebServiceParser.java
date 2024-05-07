@@ -16,6 +16,8 @@ import com.functionscout.backend.repository.WebServiceRepository;
 import com.functionscout.backend.service.DependencyService;
 import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.io.FileUtils;
+import org.eclipse.jgit.api.Git;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
@@ -38,12 +40,10 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @Slf4j
@@ -100,21 +100,23 @@ public class WebServiceParser {
             }
 
             // Clone repository
-            final ProcessBuilder builder = new ProcessBuilder()
-                    .inheritIO()
-                    .directory(directory)
-                    .command("git", "clone", webService.getGithubUrl());
-            final Process process = builder.start();
+            log.info("Cloning repository...");
 
-            int exitVal = process.waitFor();
-
-            if (exitVal != 0) {
+            try (Git result = Git.cloneRepository()
+                    .setURI(webService.getGithubUrl())
+                    .setDirectory(directory)
+                    .setProgressMonitor(new SimpleGitProgressMonitor())
+                    .call()) {
+                // Note: the call() returns an opened repository already which needs to be closed to avoid file handle leaks!
+                System.out.println("Having repository: " + result.getRepository().getDirectory());
+            } catch (Exception ex) {
                 throw new Exception("Unable to clone github repository: " + webService.getGithubUrl());
             }
 
             final List<ClassDTO> classDTOS = scanRepository(folderName);
             saveFunctions(classDTOS, webService);
-            deleteRepository(folderName);
+
+            FileUtils.deleteDirectory(directory);
         } catch (Exception ex) {
             ex.printStackTrace();
             updateWebServiceStatusToFailed(webService);
@@ -159,20 +161,6 @@ public class WebServiceParser {
         }
 
         return classDTOS;
-    }
-
-    private void deleteRepository(final String folderName) {
-        try (Stream<Path> pathStream = Files.walk(Paths.get(folderName))) {
-            pathStream.sorted(Comparator.reverseOrder())
-                    .map(Path::toFile)
-                    .forEach(file -> {
-                        if (!file.delete()) {
-                            System.out.println(("Unable to delete file: " + file.getPath()));
-                        }
-                    });
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        }
     }
 
     private boolean extractDependencies(final WebService webService, final String owner, final String repository) {
