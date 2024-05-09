@@ -145,8 +145,10 @@ public class WebServiceParser {
                     final String fileName = filePath.getFileName().toString();
 
                     if (fileName.endsWith(".java")) {
-                        // TODO: A project can have multiple classes with same name. Use 'package + class' as a unique identifier
-                        classDTOS.add(new ClassDTO(fileName.substring(0, fileName.indexOf(".java")), classParser.extractFunctions(filePath)));
+                        classDTOS.add(classParser.extractFunctions(
+                                fileName.substring(0, fileName.indexOf(".java")),
+                                filePath)
+                        );
                     }
                 }
 
