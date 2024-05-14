@@ -42,6 +42,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -125,6 +126,10 @@ public class WebServiceParser {
 
     private List<ClassDTO> scanRepository(final String folderName) {
         final List<ClassDTO> classDTOS = new ArrayList<>();
+
+        // TODO: This fetches all classes. We might not need classes from the same service
+        final Set<String> classNames = this.classRepository.findAllNames();
+
         final SimpleFileVisitor<Path> fileVisitor = new SimpleFileVisitor<>() {
 
             @Override
@@ -147,8 +152,9 @@ public class WebServiceParser {
                     if (fileName.endsWith(".java")) {
                         classDTOS.add(classParser.extractFunctions(
                                 fileName.substring(0, fileName.indexOf(".java")),
-                                filePath)
-                        );
+                                filePath,
+                                classNames
+                        ));
                     }
                 }
 
