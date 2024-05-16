@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS WebServiceFunctionDependency (
     dependingServiceId INT NOT NULL,
     functionId INT NOT NULL,
     FOREIGN KEY (dependentServiceId) REFERENCES WebService(id) ON DELETE CASCADE,
-    FOREIGN KEY (dependingServiceId) REFERENCES WebService(id) ON DELETE CASCADE,
+    FOREIGN KEY (dependingServiceId) REFERENCES Dependency(id) ON DELETE CASCADE,
     FOREIGN KEY (functionId) REFERENCES `Function`(id) ON DELETE CASCADE,
     UNIQUE(dependentServiceId, dependingServiceId, functionId)
 );
