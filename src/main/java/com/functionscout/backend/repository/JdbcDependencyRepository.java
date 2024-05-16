@@ -5,6 +5,7 @@ import com.functionscout.backend.dto.DependencyData;
 import com.functionscout.backend.dto.FunctionResponseDTO;
 import com.functionscout.backend.dto.WebServiceDependencyDTO;
 import com.functionscout.backend.dto.WebServiceFunctionDependencyDTO;
+import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.model.Dependency;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
@@ -55,13 +56,13 @@ public class JdbcDependencyRepository {
         );
     }
 
-    public List<WebServiceDependencyDTO> findAllWebServiceDependenciesByServiceId(final String serviceId) {
+    public List<WebServiceDependencyDTO> findAllWebServiceDependenciesByServiceId(final Integer serviceId) {
         final String query = "select ws.id as serviceId, d.id as dependencyId, d.name as name, " +
                 "d.version as version, d.type as type from " +
                 "WebService ws " +
                 "inner join WebServiceDependency wsd on ws.id = wsd.serviceId " +
                 "inner join Dependency d on d.id = wsd.dependencyId " +
-                "where ws.uuid = '" + serviceId + "'";
+                "where ws.id = " + serviceId;
 
         return namedParameterJdbcTemplate.query(
                 query,
@@ -128,7 +129,7 @@ public class JdbcDependencyRepository {
             webServiceDependencyDTO.setDependencyData(new DependencyData(
                     rs.getString("name"),
                     rs.getString("version"),
-                    rs.getString("type")
+                    Status.getStatus(rs.getShort("type")).name()
             ));
 
             return webServiceDependencyDTO;

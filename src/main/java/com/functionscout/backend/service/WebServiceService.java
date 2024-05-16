@@ -80,8 +80,19 @@ public class WebServiceService {
     }
 
     public List<DependencyResponseDTO> getServiceDependencies(final String serviceId) {
+        final WebService webService = findServiceIfExists(serviceId);
+
         final List<WebServiceDependencyDTO> webServiceDependencies =
-                jdbcDependencyRepository.findAllWebServiceDependenciesByServiceId(serviceId);
+                jdbcDependencyRepository.findAllWebServiceDependenciesByServiceId(webService.getId());
+        final Map<Object, WebServiceDependencyDTO> webServiceDependencyDTOMap = webServiceDependencies
+                .stream()
+                .collect(Collectors.toMap(
+                        webServiceDependencyDTO -> List.of(
+                                webServiceDependencyDTO.getServiceId(),
+                                webServiceDependencyDTO.getDependencyId()
+                        ),
+                        java.util.function.Function.identity())
+                );
         final Map<Object, List<FunctionResponseDTO>> webServiceFunctionDependencies =
                 jdbcDependencyRepository.findAllUsedWebServiceFunctionDependencies(webServiceDependencies)
                         .stream()
@@ -98,16 +109,6 @@ public class WebServiceService {
                                                 .collect(Collectors.toList())
                                 )
                         ));
-        final Map<Object, WebServiceDependencyDTO> webServiceDependencyDTOMap =
-                jdbcDependencyRepository.findAllWebServiceDependenciesByServiceId(serviceId)
-                        .stream()
-                        .collect(Collectors.toMap(
-                                webServiceDependencyDTO -> List.of(
-                                        webServiceDependencyDTO.getServiceId(),
-                                        webServiceDependencyDTO.getDependencyId()
-                                ),
-                                java.util.function.Function.identity())
-                        );
         final List<DependencyResponseDTO> dependencyResponseDTOS = new ArrayList<>();
 
         for (Object key : webServiceDependencyDTOMap.keySet()) {

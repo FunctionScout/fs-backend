@@ -38,9 +38,11 @@ public class JdbcFunctionRepository {
             return new ArrayList<>();
         }
 
-        final String query = "select f.id as functionId, c.serviceId as webServiceDependencyId " +
+        final String query = "select f.id as functionId, d.id as webServiceDependencyId " +
                 "from `Function` f " +
                 "inner join Class c on f.classId = c.id " +
+                "inner join WebService ws on ws.id = c.serviceId " +
+                "inner join Dependency d on d.name = ws.name " +
                 "where ";
         final String whereClause = "(c.serviceId = %s and f.signature = '%s')";
         final StringBuilder whereClauseBuilder = new StringBuilder();
