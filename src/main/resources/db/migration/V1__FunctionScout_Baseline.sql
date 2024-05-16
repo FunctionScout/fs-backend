@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS WebService (
 	id INT PRIMARY KEY AUTO_INCREMENT,
 	uuid VARCHAR(64) NOT NULL,
 	githubUrl VARCHAR(512) NOT NULL,
+	name VARCHAR(512) NULL,
 	status TINYINT(3) NOT NULL,
 	uniqueHash VARCHAR(64) NOT NULL,
 	message VARCHAR(512) NULL,
@@ -47,8 +48,20 @@ CREATE TABLE IF NOT EXISTS `Function` (
     classId INT NOT NULL,
     name VARCHAR(64) NOT NULL,
 	signature VARCHAR(512) NOT NULL,
+	returnType VARCHAR(64) NOT NULL,
 	createDT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NULL,
 	updateDT TIMESTAMP DEFAULT CURRENT_TIMESTAMP NULL,
 	FOREIGN KEY (classId) REFERENCES Class(id) ON DELETE CASCADE,
 	UNIQUE(classId, signature)
+);
+
+CREATE TABLE IF NOT EXISTS WebServiceFunctionDependency (
+	id INT PRIMARY KEY AUTO_INCREMENT,
+    dependentServiceId INT NOT NULL,
+    dependingServiceId INT NOT NULL,
+    functionId INT NOT NULL,
+    FOREIGN KEY (dependentServiceId) REFERENCES WebService(id) ON DELETE CASCADE,
+    FOREIGN KEY (dependingServiceId) REFERENCES WebService(id) ON DELETE CASCADE,
+    FOREIGN KEY (functionId) REFERENCES `Function`(id) ON DELETE CASCADE,
+    UNIQUE(dependentServiceId, dependingServiceId, functionId)
 );

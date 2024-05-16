@@ -12,4 +12,5 @@ import lombok.Setter;
 public class FunctionDTO {
     private String name;
     private String signature;
+    private String returnType;
 }

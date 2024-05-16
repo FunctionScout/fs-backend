@@ -2,6 +2,7 @@ package com.functionscout.backend.parser;
 
 import com.functionscout.backend.dto.ClassDTO;
 import com.functionscout.backend.dto.FunctionDTO;
+import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
@@ -24,33 +25,21 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/**
- * Responsibilities of this class:
- * <p>
- * Extract all public functions
- * Extract all imports
- * Filter only saved imports
- * Find the variables
- * Find their usages
- * Build a map of service and list of functions used from it
- * Save it in the database
- */
 @Component
 public class ClassParser {
-    int a;
 
-    public ClassDTO extractFunctions(final String className,
-                                     final Path filePath,
-                                     final Set<String> classNames) {
+    public void parse(final String className,
+                      final Path filePath,
+                      final Map<String, Integer> classMap,
+                      final List<UsedFunctionDependency> usedFunctionDependencies,
+                      final ClassDTO classDTO) {
         try {
             final CompilationUnit cu = StaticJavaParser.parse(Files.newInputStream(filePath));
             final Optional<PackageDeclaration> packageDeclaration = cu.getPackageDeclaration();
@@ -60,32 +49,38 @@ public class ClassParser {
                 packageName = packageDeclaration.get().getNameAsString();
             }
 
-            processImports(cu, classNames);
+            usedFunctionDependencies.addAll(getUsedFunctionDependencies(cu, classMap));
 
-            final List<FunctionDTO> functionDTOS = getFunctions(cu);
-
-            return new ClassDTO(packageName + "." + className, functionDTOS);
+            final List<FunctionDTO> functionDTOS = getFunctionDeclarations(cu);
+            classDTO.setClassName(packageName + "." + className);
+            classDTO.setFunctionDTOList(functionDTOS);
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
     }
 
-    private void processImports(final CompilationUnit cu, final Set<String> classNames) {
+    private List<UsedFunctionDependency> getUsedFunctionDependencies(final CompilationUnit cu,
+                                                                     final Map<String, Integer> classMap) {
+        if (classMap.isEmpty()) {
+            return new ArrayList<>();
+        }
+
         final Map<String, String> usedImportsMap = cu.getImports()
                 .stream()
                 .map(NodeWithName::getNameAsString)
                 .filter(importName -> !importName.startsWith("java.lang"))
-                .filter(classNames::contains)
+                .filter(classMap::containsKey)
                 .collect(Collectors.toMap(importName ->
                                 importName.substring(importName.lastIndexOf(".") + 1),
                         Function.identity()
                 ));
-
         final Map<String, VariableDeclarator> fieldDeclarationMap = cu.findAll(FieldDeclaration.class)
                 .stream()
                 .flatMap(fieldDeclaration -> fieldDeclaration.getVariables().stream())
-                .filter(variableDeclarator -> variableDeclarator.getType().isReferenceType())
+                .filter(variableDeclarator -> variableDeclarator.getType().isReferenceType()
+                        && usedImportsMap.containsKey(variableDeclarator.getTypeAsString()))
                 .collect(Collectors.toMap(NodeWithSimpleName::getNameAsString, Function.identity()));
+        final List<UsedFunctionDependency> usedFunctionDependencies = new ArrayList<>();
 
         cu.findAll(MethodCallExpr.class).forEach(methodCallExpr -> {
             final Optional<Expression> optionalExpression = methodCallExpr.getScope();
@@ -98,30 +93,70 @@ public class ClassParser {
                             ? expression.asNameExpr().getNameAsString()
                             : expression.asFieldAccessExpr().getNameAsString();
 
-                    // TODO: Look for static functions as well
                     if (fieldDeclarationMap.containsKey(variableName)) {
                         final String functionName = methodCallExpr.getNameAsString();
+                        final NodeList<Expression> arguments = methodCallExpr.getArguments();
+                        final List<String> argumentTypes = new LinkedList<>();
 
-                        // TODO: Change this to a list
-                        // TODO: Remove isNameExpr filter. Accept all expression types and later resolve type only for NameExpr
-                        final Map<String, Expression> argumentMap = new LinkedHashMap<>(methodCallExpr.getArguments()
-                                .stream()
-                                .filter(Expression::isNameExpr)
-                                .collect(Collectors.toMap(
-                                        expr -> expr.asNameExpr().getNameAsString(), Function.identity())
-                                )
-                        );
-                        final Map<String, String> argumentTypeMap = new HashMap<>();
+                        arguments.forEach(expr -> {
+                            if (expr.isNameExpr()) {
+                                final String argument = expr.asNameExpr().getNameAsString();
+                                final String argumentType = resolveArgumentType(argument, expr, fieldDeclarationMap);
+                                argumentTypes.add(argumentType);
+                            } else if (expr.isClassExpr() || expr.isObjectCreationExpr()) {
+                                final String type = expr.isClassExpr()
+                                        ? expr.asClassExpr().getTypeAsString()
+                                        : expr.asObjectCreationExpr().getTypeAsString();
 
-                        argumentMap.forEach((argument, expr) -> {
-                            final String argumentType = resolveArgumentType(argument, expr, fieldDeclarationMap);
-                            System.out.println("Variable: " + argument + " Type: " + argumentType);
-                            argumentTypeMap.put(argument, argumentType);
+                                if (usedImportsMap.containsKey(type)) {
+                                    argumentTypes.add(type);
+                                }
+                            } else if (expr.isStringLiteralExpr()) {
+                                argumentTypes.add("String");
+                            } else if (expr.isIntegerLiteralExpr()) {
+                                argumentTypes.add("int");
+                            } else if (expr.isDoubleLiteralExpr()) {
+                                argumentTypes.add("double");
+                            } else if (expr.isBooleanLiteralExpr()) {
+                                argumentTypes.add("boolean");
+                            } else if (expr.isLongLiteralExpr()) {
+                                argumentTypes.add("long");
+                            } else if (expr.isCharLiteralExpr()) {
+                                argumentTypes.add("char");
+                            }
                         });
+
+                        int argumentCount = argumentTypes.size();
+                        final StringBuilder signatureBuilder = new StringBuilder();
+                        signatureBuilder.append(functionName).append("(");
+
+                        for (String argumentType : argumentTypes) {
+                            signatureBuilder.append(argumentType);
+
+                            if (argumentCount > 1) {
+                                signatureBuilder.append(", ");
+                            }
+
+                            argumentCount--;
+                        }
+
+                        signatureBuilder.append(")");
+
+                        final String variableType = fieldDeclarationMap.get(variableName).getTypeAsString();
+                        final Integer serviceId = classMap.get(usedImportsMap.get(variableType));
+
+                        usedFunctionDependencies.add(new UsedFunctionDependency(
+                                serviceId,
+                                signatureBuilder.toString())
+                        );
+                    } else {
+                        // TODO: Look for static functions as well
                     }
                 }
             }
         });
+
+        return usedFunctionDependencies;
     }
 
     private String resolveArgumentType(final String argument,
@@ -130,7 +165,7 @@ public class ClassParser {
         Optional<Node> optionalNode = expression.getParentNode();
         Optional<Node> previousCheckpointNode = Optional.empty();
 
-        // 1. It is defined within the scope of the function
+        // 1. Function body
         while (optionalNode.isPresent()) {
             final Node node = optionalNode.get();
 
@@ -162,7 +197,7 @@ public class ClassParser {
             optionalNode = previousCheckpointNode.get().getParentNode();
         }
 
-        // 2. It is a function argument
+        // 2. Function arguments
         while (optionalNode.isPresent()) {
             final Node node = optionalNode.get();
 
@@ -182,6 +217,7 @@ public class ClassParser {
             optionalNode = node.getParentNode();
         }
 
+        // 3. Class fields
         if (fieldDeclarationMap.containsKey(argument)) {
             return fieldDeclarationMap.get(argument).getType().asString();
         }
@@ -189,7 +225,7 @@ public class ClassParser {
         return "";
     }
 
-    private List<FunctionDTO> getFunctions(final CompilationUnit cu) {
+    private List<FunctionDTO> getFunctionDeclarations(final CompilationUnit cu) {
         final VoidVisitor<List<FunctionDTO>> methodCollector = new MethodNameCollector();
         final List<FunctionDTO> functionDTOS = new ArrayList<>();
         methodCollector.visit(cu, functionDTOS);
@@ -202,9 +238,13 @@ public class ClassParser {
         @Override
         public void visit(MethodDeclaration md, List<FunctionDTO> collector) {
             super.visit(md, collector);
+
+            String signature = md.getDeclarationAsString(false, false, false);
+
             collector.add(new FunctionDTO(
                     md.getNameAsString(),
-                    md.getDeclarationAsString(true, false, false)
+                    signature.substring(signature.indexOf(" ") + 1),
+                    md.getTypeAsString()
             ));
         }
     }

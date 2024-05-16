@@ -32,6 +32,8 @@ public class Function {
 
     private String signature;
 
+    private String returnType;
+
     private Timestamp createDT;
 
     private Timestamp updateDT;
@@ -41,10 +43,11 @@ public class Function {
     private Class clazz;
 
     @Autowired
-    public Function(final String name, final String signature, final Class clazz) {
+    public Function(final String name, final String signature, final String returnType, final Class clazz) {
         this.uuid = UUID.randomUUID().toString();
         this.name = name;
         this.signature = signature;
+        this.returnType = returnType;
         this.createDT = Timestamp.from(Instant.now());
         this.updateDT = Timestamp.from(Instant.now());
         this.clazz = clazz;

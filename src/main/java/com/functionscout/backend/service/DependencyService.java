@@ -28,7 +28,7 @@ public class DependencyService {
                                    final List<DependencyDTO> webServiceDependencies) {
         jdbcDependencyRepository.saveAllDependencies(webServiceDependencies);
 
-        final List<Dependency> dependencies = jdbcDependencyRepository.getDependencies(webServiceDependencies);
+        final List<Dependency> dependencies = jdbcDependencyRepository.findAllDependenciesByNameAndVersion(webServiceDependencies);
 
         // TODO: Insert into webservicedependencies separately through a native query
         webService.setDependencies(new HashSet<>(dependencies));

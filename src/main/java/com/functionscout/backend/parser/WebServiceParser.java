@@ -5,16 +5,22 @@ import com.functionscout.backend.dto.ClassDTO;
 import com.functionscout.backend.dto.DependencyDTO;
 import com.functionscout.backend.dto.FunctionDTO;
 import com.functionscout.backend.dto.GithubPomFileContentResponse;
+import com.functionscout.backend.dto.UsedFunctionDependency;
+import com.functionscout.backend.dto.UsedFunctionDependencyFromDB;
+import com.functionscout.backend.dto.WebServiceClassData;
 import com.functionscout.backend.enums.DependencyType;
 import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.model.Class;
 import com.functionscout.backend.model.Function;
 import com.functionscout.backend.model.WebService;
+import com.functionscout.backend.model.WebServiceFunctionDependency;
 import com.functionscout.backend.repository.ClassRepository;
 import com.functionscout.backend.repository.FunctionRepository;
+import com.functionscout.backend.repository.JdbcClassRepository;
+import com.functionscout.backend.repository.JdbcFunctionRepository;
+import com.functionscout.backend.repository.WebServiceFunctionDependencyRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
 import com.functionscout.backend.service.DependencyService;
-import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
@@ -40,9 +46,9 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -66,7 +72,16 @@ public class WebServiceParser {
     private ClassRepository classRepository;
 
     @Autowired
+    private JdbcClassRepository jdbcClassRepository;
+
+    @Autowired
     private FunctionRepository functionRepository;
+
+    @Autowired
+    private JdbcFunctionRepository jdbcFunctionRepository;
+
+    @Autowired
+    private WebServiceFunctionDependencyRepository webServiceFunctionDependencyRepository;
 
     @Value("${functionscout.github.pat-token}")
     private String githubPatToken;
@@ -95,26 +110,29 @@ public class WebServiceParser {
                 }
             }
 
-            if (!extractDependencies(webService, owner, repository)) {
-                updateWebServiceStatusToFailed(webService);
-                return;
-            }
+            extractDependencies(webService, owner, repository);
 
             // Clone repository
             log.info("Cloning repository...");
+            String githubUrl = webService.getGithubUrl();
+            githubUrl = "https://oauth2:" + githubPatToken + "@" + githubUrl.substring(githubUrl.indexOf("https://") + 8);
 
-            try (Git result = Git.cloneRepository()
-                    .setURI(webService.getGithubUrl())
+            try (final Git result = Git.cloneRepository()
+                    .setURI(githubUrl)
                     .setDirectory(directory)
                     .setProgressMonitor(new SimpleGitProgressMonitor())
                     .call()) {
-                // Note: the call() returns an opened repository already which needs to be closed to avoid file handle leaks!
-                System.out.println("Having repository: " + result.getRepository().getDirectory());
+                log.info("Repository Details: " + result.getRepository().getDirectory());
             } catch (Exception ex) {
                 throw new Exception("Unable to clone github repository: " + webService.getGithubUrl());
             }
 
-            final List<ClassDTO> classDTOS = scanRepository(folderName);
+            final List<UsedFunctionDependency> usedFunctionDependencies = new ArrayList<>();
+            final List<ClassDTO> classDTOS = new ArrayList<>();
+
+            scanRepository(folderName, usedFunctionDependencies, classDTOS);
+
+            saveWebServiceFunctionDependencies(usedFunctionDependencies, webService);
             saveFunctions(classDTOS, webService);
 
             FileUtils.deleteDirectory(directory);
@@ -124,11 +142,13 @@ public class WebServiceParser {
         }
     }
 
-    private List<ClassDTO> scanRepository(final String folderName) {
-        final List<ClassDTO> classDTOS = new ArrayList<>();
-
+    private void scanRepository(final String folderName,
+                                final List<UsedFunctionDependency> usedFunctionDependencies,
+                                final List<ClassDTO> classDTOS) {
         // TODO: This fetches all classes. We might not need classes from the same service
-        final Set<String> classNames = this.classRepository.findAllNames();
+        final Map<String, Integer> classMap = this.jdbcClassRepository.findAll()
+                .stream()
+                .collect(Collectors.toMap(WebServiceClassData::getClassName, WebServiceClassData::getServiceId));
 
         final SimpleFileVisitor<Path> fileVisitor = new SimpleFileVisitor<>() {
 
@@ -150,11 +170,17 @@ public class WebServiceParser {
                     final String fileName = filePath.getFileName().toString();
 
                     if (fileName.endsWith(".java")) {
-                        classDTOS.add(classParser.extractFunctions(
+                        final ClassDTO classDTO = new ClassDTO();
+
+                        classParser.parse(
                                 fileName.substring(0, fileName.indexOf(".java")),
                                 filePath,
-                                classNames
-                        ));
+                                classMap,
+                                usedFunctionDependencies,
+                                classDTO
+                        );
+
+                        classDTOS.add(classDTO);
                     }
                 }
 
@@ -167,11 +193,11 @@ public class WebServiceParser {
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
-
-        return classDTOS;
     }
 
-    private boolean extractDependencies(final WebService webService, final String owner, final String repository) {
+    private void extractDependencies(final WebService webService,
+                                     final String owner,
+                                     final String repository) {
         try {
             final GithubPomFileContentResponse githubPomFileContentResponse = githubClient.getRepositoryContentForFile(
                     "Bearer " + githubPatToken,
@@ -188,14 +214,40 @@ public class WebServiceParser {
             );
 
             final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            final List<DependencyDTO> webServiceDependencies = new ArrayList<>();
             DocumentBuilder builder;
 
             builder = factory.newDocumentBuilder();
             final Document document = builder.parse(new InputSource(new StringReader(pomContent)));
             final Element rootElement = document.getDocumentElement();
+
+            final NodeList groupIdNodes = rootElement.getElementsByTagName("groupId");
+            final NodeList artifactIdNodes = rootElement.getElementsByTagName("artifactId");
+            String projectGroupId = "";
+            String projectArtifactId = "";
+
+            for (int index = 0; index < groupIdNodes.getLength(); index++) {
+                Element node = (Element) groupIdNodes.item(index);
+
+                if (node.getParentNode() != null && node.getParentNode().getNodeName().equals("project")) {
+                    projectGroupId = node.getTextContent();
+                    break;
+                }
+            }
+
+            for (int index = 0; index < artifactIdNodes.getLength(); index++) {
+                Element node = (Element) artifactIdNodes.item(index);
+
+                if (node.getParentNode() != null && node.getParentNode().getNodeName().equals("project")) {
+                    projectArtifactId = node.getTextContent();
+                    break;
+                }
+            }
+
+            webService.setName(projectGroupId + "." + projectArtifactId);
+
             final Element dependenciesElement = (Element) rootElement.getElementsByTagName("dependencies").item(0);
             final NodeList dependencyElements = dependenciesElement.getElementsByTagName("dependency");
+            final List<DependencyDTO> webServiceDependencies = new ArrayList<>();
 
             for (int index = 0; index < dependencyElements.getLength(); index++) {
                 final Element dependencyElement = (Element) dependencyElements.item(index);
@@ -224,25 +276,35 @@ public class WebServiceParser {
             }
 
             dependencyService.createDependencies(webService, webServiceDependencies);
-        } catch (FeignException fex) {
-            log.error("Exception while fetching pom content from Github");
-            fex.printStackTrace();
-
-            return false;
         } catch (Exception ex) {
-            log.error("Exception while parsing pom content");
-            ex.printStackTrace();
-
-            return false;
+            throw new RuntimeException(ex);
         }
-
-        return true;
     }
 
     private void updateWebServiceStatusToFailed(final WebService webService) {
         webService.setStatus(Status.FAILED.getCode());
         webService.setUniqueHash(webService.getUuid());
+        webService.setDependencies(new HashSet<>());
         webServiceRepository.save(webService);
+    }
+
+    private void saveWebServiceFunctionDependencies(final List<UsedFunctionDependency> usedFunctionDependencies,
+                                                    final WebService webService) {
+        final List<UsedFunctionDependencyFromDB> usedFunctionDependencyFromDBS =
+                jdbcFunctionRepository.findAllFunctionsByServiceIdAndFunctionId(usedFunctionDependencies);
+        final List<WebServiceFunctionDependency> webServiceFunctionDependencies = new ArrayList<>();
+
+        for (UsedFunctionDependencyFromDB usedFunctionDependencyFromDB : usedFunctionDependencyFromDBS) {
+            webServiceFunctionDependencies.add(
+                    new WebServiceFunctionDependency(
+                            webService.getId(),
+                            usedFunctionDependencyFromDB.getWebServiceDependencyId(),
+                            usedFunctionDependencyFromDB.getFunctionId()
+                    )
+            );
+        }
+
+        webServiceFunctionDependencyRepository.saveAll(webServiceFunctionDependencies);
     }
 
     private void saveFunctions(final List<ClassDTO> classDTOS, final WebService webService) {
@@ -257,7 +319,12 @@ public class WebServiceParser {
         final List<Function> functions = classes.stream()
                 .flatMap(clazz -> classFunctionMap.get(clazz.getName())
                         .stream()
-                        .map(functionDTO -> new Function(functionDTO.getName(), functionDTO.getSignature(), clazz)))
+                        .map(functionDTO -> new Function(
+                                functionDTO.getName(),
+                                functionDTO.getSignature(),
+                                functionDTO.getReturnType(),
+                                clazz))
+                )
                 .collect(Collectors.toList());
 
         functionRepository.saveAll(functions);
