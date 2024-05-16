@@ -34,6 +34,8 @@ public class WebService {
 
     private String githubUrl;
 
+    private String name;
+
     private Short status;
 
     private String message;

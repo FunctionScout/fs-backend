@@ -1,18 +1,20 @@
 package com.functionscout.backend.service;
 
 import com.functionscout.backend.dto.DashboardResponseDTO;
+import com.functionscout.backend.dto.DependencyData;
 import com.functionscout.backend.dto.DependencyResponseDTO;
 import com.functionscout.backend.dto.FunctionDetailResponseDTO;
 import com.functionscout.backend.dto.FunctionResponseDTO;
+import com.functionscout.backend.dto.WebServiceDependencyDTO;
+import com.functionscout.backend.dto.WebServiceFunctionDependencyDTO;
 import com.functionscout.backend.dto.WebServiceRequest;
-import com.functionscout.backend.enums.DependencyType;
 import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.exception.BadRequestException;
-import com.functionscout.backend.model.Dependency;
 import com.functionscout.backend.model.Function;
 import com.functionscout.backend.model.WebService;
 import com.functionscout.backend.parser.WebServiceParser;
 import com.functionscout.backend.repository.FunctionRepository;
+import com.functionscout.backend.repository.JdbcDependencyRepository;
 import com.functionscout.backend.repository.JdbcFunctionRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
 import jakarta.transaction.Transactional;
@@ -21,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -40,6 +43,9 @@ public class WebServiceService {
 
     @Autowired
     private FunctionRepository functionRepository;
+
+    @Autowired
+    private JdbcDependencyRepository jdbcDependencyRepository;
 
     public void addService(final WebServiceRequest webServiceRequest) {
         validateAddServiceDTO(webServiceRequest);
@@ -73,15 +79,54 @@ public class WebServiceService {
                 .collect(Collectors.toList());
     }
 
-    // TODO: Remove transactional and use a native join query to fetch the result. Do not eager load the dependencies!!!
-    @Transactional
     public List<DependencyResponseDTO> getServiceDependencies(final String serviceId) {
-        final WebService webService = findServiceIfExists(serviceId);
+        final List<WebServiceDependencyDTO> webServiceDependencies =
+                jdbcDependencyRepository.findAllWebServiceDependenciesByServiceId(serviceId);
+        final Map<Object, List<FunctionResponseDTO>> webServiceFunctionDependencies =
+                jdbcDependencyRepository.findAllUsedWebServiceFunctionDependencies(webServiceDependencies)
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                webServiceFunctionDependencyDTO -> List.of(
+                                        webServiceFunctionDependencyDTO.getServiceId(),
+                                        webServiceFunctionDependencyDTO.getDependencyId()
+                                ),
+                                Collectors.collectingAndThen(
+                                        Collectors.toList(),
+                                        webServiceFunctionDependencyDTOS -> webServiceFunctionDependencyDTOS
+                                                .stream()
+                                                .map(WebServiceFunctionDependencyDTO::getFunctionResponseDTO)
+                                                .collect(Collectors.toList())
+                                )
+                        ));
+        final Map<Object, WebServiceDependencyDTO> webServiceDependencyDTOMap =
+                jdbcDependencyRepository.findAllWebServiceDependenciesByServiceId(serviceId)
+                        .stream()
+                        .collect(Collectors.toMap(
+                                webServiceDependencyDTO -> List.of(
+                                        webServiceDependencyDTO.getServiceId(),
+                                        webServiceDependencyDTO.getDependencyId()
+                                ),
+                                java.util.function.Function.identity())
+                        );
+        final List<DependencyResponseDTO> dependencyResponseDTOS = new ArrayList<>();
 
-        return webService.getDependencies()
-                .stream()
-                .map(this::toDto)
-                .toList();
+        for (Object key : webServiceDependencyDTOMap.keySet()) {
+            final DependencyData dependencyData = webServiceDependencyDTOMap.get(key).getDependencyData();
+            final DependencyResponseDTO dependencyResponseDTO = new DependencyResponseDTO(
+                    dependencyData.getName(),
+                    dependencyData.getVersion(),
+                    dependencyData.getType(),
+                    new ArrayList<>()
+            );
+
+            if (webServiceFunctionDependencies.containsKey(key)) {
+                dependencyResponseDTO.setUsedFunctions(webServiceFunctionDependencies.get(key));
+            }
+
+            dependencyResponseDTOS.add(dependencyResponseDTO);
+        }
+
+        return dependencyResponseDTOS;
     }
 
     public List<FunctionResponseDTO> getServiceFunctions(final String serviceId) {
@@ -112,14 +157,6 @@ public class WebServiceService {
                 webService.getUuid(),
                 webService.getGithubUrl(),
                 Status.getStatus(webService.getStatus()).name()
-        );
-    }
-
-    private DependencyResponseDTO toDto(final Dependency dependency) {
-        return new DependencyResponseDTO(
-                dependency.getName(),
-                dependency.getVersion(),
-                DependencyType.getDependencyType(dependency.getType()).name()
         );
     }
 
