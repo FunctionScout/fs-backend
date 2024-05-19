@@ -1,0 +1,35 @@
+spring:
+  flyway:
+    enabled: true
+    ignore-missing-migrations: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    out-of-order: true
+  jpa:
+    hibernate:
+      ddl-auto: none
+      naming:
+        physical-strategy: org.hibernate.boot.model.naming.PhysicalNamingStrategyStandardImpl
+    show-sql: true
+    open-in-view: false
+  datasource:
+    password: ${FS_DB_PWD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    username: ${FS_DB_USER}
+    url: ${FS_DB_URL}/function_scout
+
+functionscout:
+  github:
+    client:
+      base-url: https://api.github.com/repos/
+    api-version: 2022-11-28
+    accept-header: application/vnd.github+json
+    url-pattern: ^(https://github.com/)([\w_-]+)/([\w.-]+)\.(git)?$
+    pat-token: ${FS_GITHUB_PAT_TOKEN}
+    
+server:
+  servlet:
+    context-path: /api
+  port: 8080
+  error:
+    include-message: always

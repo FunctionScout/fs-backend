@@ -11,13 +11,16 @@ import com.functionscout.backend.dto.WebServiceClassData;
 import com.functionscout.backend.enums.DependencyType;
 import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.model.Class;
+import com.functionscout.backend.model.Dependency;
 import com.functionscout.backend.model.Function;
 import com.functionscout.backend.model.WebService;
 import com.functionscout.backend.model.WebServiceFunctionDependency;
 import com.functionscout.backend.repository.ClassRepository;
+import com.functionscout.backend.repository.DependencyRepository;
 import com.functionscout.backend.repository.FunctionRepository;
 import com.functionscout.backend.repository.JdbcClassRepository;
 import com.functionscout.backend.repository.JdbcFunctionRepository;
+import com.functionscout.backend.repository.JdbcWebServiceRepository;
 import com.functionscout.backend.repository.WebServiceFunctionDependencyRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
 import com.functionscout.backend.service.DependencyService;
@@ -46,9 +49,11 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -58,6 +63,9 @@ public class WebServiceParser {
 
     @Autowired
     private WebServiceRepository webServiceRepository;
+
+    @Autowired
+    private JdbcWebServiceRepository jdbcWebServiceRepository;
 
     @Autowired
     private GithubClient githubClient;
@@ -83,6 +91,12 @@ public class WebServiceParser {
     @Autowired
     private WebServiceFunctionDependencyRepository webServiceFunctionDependencyRepository;
 
+    @Autowired
+    private DependencyRepository dependencyRepository;
+
+    @Autowired
+    private GithubUrlParser githubUrlParser;
+
     @Value("${functionscout.github.pat-token}")
     private String githubPatToken;
 
@@ -93,63 +107,89 @@ public class WebServiceParser {
     private String githubAcceptHeader;
 
     @Async
-    public void processGithubUrl(final WebService webService, final String owner, final String repository) {
+    public void processGithubUrl(final WebService webService) {
         try {
-            final String tempDirectory = System.getProperty("java.io.tmpdir");
-            final String folderName = tempDirectory.charAt(tempDirectory.length() - 1) == '/'
-                    ? tempDirectory + UUID.randomUUID()
-                    : tempDirectory + "/" + UUID.randomUUID();
-
-            log.info("Folder name: " + folderName);
-
-            final File directory = new File(folderName);
-
-            if (!directory.exists()) {
-                if (!directory.mkdirs()) {
-                    throw new Exception("Unable to create directory");
-                }
-            }
-
-            extractDependencies(webService, owner, repository);
-
-            // Clone repository
-            log.info("Cloning repository...");
-            String githubUrl = webService.getGithubUrl();
-            githubUrl = "https://oauth2:" + githubPatToken + "@" + githubUrl.substring(githubUrl.indexOf("https://") + 8);
-
-            try (final Git result = Git.cloneRepository()
-                    .setURI(githubUrl)
-                    .setDirectory(directory)
-                    .setProgressMonitor(new SimpleGitProgressMonitor())
-                    .call()) {
-                log.info("Repository Details: " + result.getRepository().getDirectory());
-            } catch (Exception ex) {
-                throw new Exception("Unable to clone github repository: " + webService.getGithubUrl());
-            }
-
-            final List<UsedFunctionDependency> usedFunctionDependencies = new ArrayList<>();
-            final List<ClassDTO> classDTOS = new ArrayList<>();
-
-            scanRepository(folderName, usedFunctionDependencies, classDTOS);
-
-            saveWebServiceFunctionDependencies(usedFunctionDependencies, webService);
-            saveFunctions(classDTOS, webService);
-
-            FileUtils.deleteDirectory(directory);
+            normalScan(webService, false, null);
+            reverseScan(webService);
         } catch (Exception ex) {
             ex.printStackTrace();
             updateWebServiceStatusToFailed(webService);
         }
     }
 
+    private void normalScan(final WebService webService,
+                            final boolean isReverseScan,
+                            final Integer reverseWebServiceId) throws Exception {
+        final String tempDirectory = System.getProperty("java.io.tmpdir");
+        final String folderName = tempDirectory.charAt(tempDirectory.length() - 1) == '/'
+                ? tempDirectory + UUID.randomUUID()
+                : tempDirectory + "/" + UUID.randomUUID();
+
+        log.info("Folder name: " + folderName);
+
+        final File directory = new File(folderName);
+
+        if (!directory.exists()) {
+            if (!directory.mkdirs()) {
+                throw new Exception("Unable to create directory");
+            }
+        }
+
+        if (!isReverseScan) {
+            extractDependencies(webService);
+        }
+
+        // Clone repository
+        log.info("Cloning repository...");
+        String githubUrl = webService.getGithubUrl();
+        githubUrl = "https://oauth2:" + githubPatToken + "@" + githubUrl.substring(githubUrl.indexOf("https://") + 8);
+
+        try (final Git result = Git.cloneRepository()
+                .setURI(githubUrl)
+                .setDirectory(directory)
+                .setProgressMonitor(new SimpleGitProgressMonitor())
+                .call()) {
+            log.info("Repository Details: " + result.getRepository().getDirectory());
+        } catch (Exception ex) {
+            throw new Exception("Unable to clone github repository: " + webService.getGithubUrl());
+        }
+
+        final List<UsedFunctionDependency> usedFunctionDependencies = new ArrayList<>();
+        final List<ClassDTO> classDTOS = new ArrayList<>();
+
+        // TODO: This fetches all classes. We might not need classes from the same service
+        final Map<String, Integer> classMap = new HashMap<>();
+
+        if (isReverseScan) {
+            classMap.putAll(this.jdbcClassRepository.findAllClassesForWebService(reverseWebServiceId)
+                    .stream()
+                    .collect(Collectors.toMap(WebServiceClassData::getClassName, WebServiceClassData::getServiceId))
+            );
+        } else {
+            classMap.putAll(this.jdbcClassRepository.findAllClassesOfWebServiceDependencies(webService.getId())
+                    .stream()
+                    .collect(Collectors.toMap(WebServiceClassData::getClassName, WebServiceClassData::getServiceId))
+            );
+        }
+
+        scanRepository(folderName, usedFunctionDependencies, classDTOS, classMap, isReverseScan);
+
+        saveWebServiceFunctionDependencies(usedFunctionDependencies, webService);
+
+        if (!isReverseScan) {
+            saveFunctions(classDTOS, webService);
+        }
+
+        // TODO: Modify dependency type to internal
+
+        FileUtils.deleteDirectory(directory);
+    }
+
     private void scanRepository(final String folderName,
                                 final List<UsedFunctionDependency> usedFunctionDependencies,
-                                final List<ClassDTO> classDTOS) {
-        // TODO: This fetches all classes. We might not need classes from the same service
-        final Map<String, Integer> classMap = this.jdbcClassRepository.findAll()
-                .stream()
-                .collect(Collectors.toMap(WebServiceClassData::getClassName, WebServiceClassData::getServiceId));
-
+                                final List<ClassDTO> classDTOS,
+                                final Map<String, Integer> classMap,
+                                final boolean isReverseScan) {
         final SimpleFileVisitor<Path> fileVisitor = new SimpleFileVisitor<>() {
 
             @Override
@@ -177,7 +217,8 @@ public class WebServiceParser {
                                 filePath,
                                 classMap,
                                 usedFunctionDependencies,
-                                classDTO
+                                classDTO,
+                                isReverseScan
                         );
 
                         classDTOS.add(classDTO);
@@ -195,16 +236,15 @@ public class WebServiceParser {
         }
     }
 
-    private void extractDependencies(final WebService webService,
-                                     final String owner,
-                                     final String repository) {
+    private void extractDependencies(final WebService webService) {
         try {
+            final List<String> githubUrlComponents = githubUrlParser.parse(webService.getGithubUrl());
             final GithubPomFileContentResponse githubPomFileContentResponse = githubClient.getRepositoryContentForFile(
                     "Bearer " + githubPatToken,
                     githubApiVersion,
                     githubAcceptHeader,
-                    owner,
-                    repository,
+                    githubUrlComponents.get(0),
+                    githubUrlComponents.get(1),
                     "pom.xml"
             );
             final Base64.Decoder decoder = Base64.getMimeDecoder();
@@ -214,9 +254,7 @@ public class WebServiceParser {
             );
 
             final DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            DocumentBuilder builder;
-
-            builder = factory.newDocumentBuilder();
+            final DocumentBuilder builder = factory.newDocumentBuilder();
             final Document document = builder.parse(new InputSource(new StringReader(pomContent)));
             final Element rootElement = document.getDocumentElement();
 
@@ -329,7 +367,24 @@ public class WebServiceParser {
 
         functionRepository.saveAll(functions);
 
+        // TODO: Move this into its own function. Should not depend on saveFunctions to change the status of a service
         webService.setStatus(Status.SUCCESS.getCode());
         webServiceRepository.save(webService);
+    }
+
+    private void reverseScan(final WebService webService) throws Exception {
+        final Optional<Dependency> dependency = dependencyRepository.findByName(webService.getName());
+
+        if (dependency.isPresent()) {
+            final List<WebService> webServices = jdbcWebServiceRepository.findAllByDependencyId(dependency.get().getId());
+
+            if (webServices.isEmpty()) {
+                return;
+            }
+
+            for (final WebService service : webServices) {
+                normalScan(service, true, webService.getId());
+            }
+        }
     }
 }
