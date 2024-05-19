@@ -12,6 +12,7 @@ import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.exception.BadRequestException;
 import com.functionscout.backend.model.Function;
 import com.functionscout.backend.model.WebService;
+import com.functionscout.backend.parser.GithubUrlParser;
 import com.functionscout.backend.parser.WebServiceParser;
 import com.functionscout.backend.repository.FunctionRepository;
 import com.functionscout.backend.repository.JdbcDependencyRepository;
@@ -25,8 +26,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -47,15 +46,11 @@ public class WebServiceService {
     @Autowired
     private JdbcDependencyRepository jdbcDependencyRepository;
 
+    @Autowired
+    private GithubUrlParser githubUrlParser;
+
     public void addService(final WebServiceRequest webServiceRequest) {
         validateAddServiceDTO(webServiceRequest);
-
-        final Pattern pattern = Pattern.compile("^(https://github.com/)([\\w_-]+)/([\\w.-]+)\\.(git)?$");
-        final Matcher matcher = pattern.matcher(webServiceRequest.getGithubUrl());
-
-        if (!matcher.matches()) {
-            throw new BadRequestException("Required format for the Github URL is: https://github.com/OWNER/REPOSITORY.git");
-        }
 
         final int serviceRecords = webServiceRepository.countByGithubUrlAndStatuses(
                 webServiceRequest.getGithubUrl(),
@@ -70,7 +65,7 @@ public class WebServiceService {
         final WebService webService = webServiceRepository.save(new WebService(webServiceRequest.getGithubUrl()));
 
         // Now add the githubUrl to a queue or pass it to an async function for processing
-        webServiceParser.processGithubUrl(webService, matcher.group(2), matcher.group(3));
+        webServiceParser.processGithubUrl(webService);
     }
 
     public List<DashboardResponseDTO> getAllWebServices() {
@@ -166,6 +161,8 @@ public class WebServiceService {
             throw new BadRequestException("Empty payload.");
         } else if (webServiceRequest.getGithubUrl().isBlank()) {
             throw new BadRequestException("Github URL cannot be blank");
+        } else if (!githubUrlParser.isValid(webServiceRequest.getGithubUrl())) {
+            throw new BadRequestException("Required format for the Github URL is: https://github.com/OWNER/REPOSITORY.git");
         }
     }
 

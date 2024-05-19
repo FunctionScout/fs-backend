@@ -39,7 +39,8 @@ public class ClassParser {
                       final Path filePath,
                       final Map<String, Integer> classMap,
                       final List<UsedFunctionDependency> usedFunctionDependencies,
-                      final ClassDTO classDTO) {
+                      final ClassDTO classDTO,
+                      final boolean isReverseScan) {
         try {
             final CompilationUnit cu = StaticJavaParser.parse(Files.newInputStream(filePath));
             final Optional<PackageDeclaration> packageDeclaration = cu.getPackageDeclaration();
@@ -51,9 +52,11 @@ public class ClassParser {
 
             usedFunctionDependencies.addAll(getUsedFunctionDependencies(cu, classMap));
 
-            final List<FunctionDTO> functionDTOS = getFunctionDeclarations(cu);
-            classDTO.setClassName(packageName + "." + className);
-            classDTO.setFunctionDTOList(functionDTOS);
+            if (!isReverseScan) {
+                final List<FunctionDTO> functionDTOS = getFunctionDeclarations(cu);
+                classDTO.setClassName(packageName + "." + className);
+                classDTO.setFunctionDTOList(functionDTOS);
+            }
         } catch (Exception ex) {
             throw new RuntimeException(ex);
         }
