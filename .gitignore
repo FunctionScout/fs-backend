@@ -28,3 +28,4 @@ replay_pid*
 target
 
 application-local.properties
+application-local.yml
