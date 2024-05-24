@@ -1,11 +1,14 @@
 package com.functionscout.backend.repository;
 
+import com.functionscout.backend.dto.FunctionData;
 import com.functionscout.backend.dto.FunctionResponseDTO;
 import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.functionscout.backend.dto.UsedFunctionDependencyFromDB;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.jdbc.core.namedparam.SqlParameterSource;
+import org.springframework.jdbc.core.namedparam.SqlParameterSourceUtils;
 import org.springframework.stereotype.Repository;
 
 import java.sql.ResultSet;
@@ -69,6 +72,16 @@ public class JdbcFunctionRepository {
                 new HashMap<>(),
                 new UsedFunctionDependencyMapper()
         );
+    }
+
+    public void saveAll(final List<FunctionData> functionDataLis) {
+        final String insertQuery = """
+                INSERT IGNORE `Function` (uuid, classId, name, signature, returnType)
+                VALUES
+                (:uuid, :classId, :name, :signature, :returnType)
+                """;
+        final SqlParameterSource[] batch = SqlParameterSourceUtils.createBatch(functionDataLis);
+        namedParameterJdbcTemplate.batchUpdate(insertQuery, batch);
     }
 
     private static final class FunctionResponseMapper implements RowMapper<FunctionResponseDTO> {

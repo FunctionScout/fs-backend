@@ -52,20 +52,25 @@ public class WebServiceService {
     public void addService(final WebServiceRequest webServiceRequest) {
         validateAddServiceDTO(webServiceRequest);
 
-        final int serviceRecords = webServiceRepository.countByGithubUrlAndStatuses(
+        final int inProgressServicesCount = webServiceRepository.countByGithubUrlAndStatus(
                 webServiceRequest.getGithubUrl(),
-                List.of(Status.IN_PROGRESS.getCode(), Status.SUCCESS.getCode())
+                Status.IN_PROGRESS.getCode()
         );
 
-        // TODO: If the service already exists, re-scan the service and rebuild the dependencies instead of throwing an error
-        if (serviceRecords > 0) {
-            throw new BadRequestException("Github url already exists");
+        if (inProgressServicesCount > 0) {
+            throw new BadRequestException("The githubUrl is currently being processed. Try again in sometime...");
         }
 
-        final WebService webService = webServiceRepository.save(new WebService(webServiceRequest.getGithubUrl()));
+        Optional<WebService> webService = webServiceRepository.findWebServiceByGithubUrlAndStatus(
+                webServiceRequest.getGithubUrl(),
+                Status.SUCCESS.getCode()
+        );
 
-        // Now add the githubUrl to a queue or pass it to an async function for processing
-        webServiceParser.processGithubUrl(webService);
+        if (webService.isEmpty()) {
+            webService = Optional.of(webServiceRepository.save(new WebService(webServiceRequest.getGithubUrl())));
+        }
+
+        webServiceParser.processGithubUrl(webService.get());
     }
 
     public List<DashboardResponseDTO> getAllWebServices() {
