@@ -26,7 +26,7 @@ public class DependencyService {
 
     public void createDependencies(final WebService webService,
                                    final List<DependencyDTO> webServiceDependencies) {
-        jdbcDependencyRepository.saveAllDependencies(webServiceDependencies);
+        jdbcDependencyRepository.saveAll(webServiceDependencies);
 
         final List<Dependency> dependencies = jdbcDependencyRepository.findAllDependenciesByNameAndVersion(webServiceDependencies);
 

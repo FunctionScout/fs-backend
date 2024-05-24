@@ -2,17 +2,17 @@ package com.functionscout.backend.parser;
 
 import com.functionscout.backend.client.GithubClient;
 import com.functionscout.backend.dto.ClassDTO;
+import com.functionscout.backend.dto.ClassData;
 import com.functionscout.backend.dto.DependencyDTO;
 import com.functionscout.backend.dto.FunctionDTO;
+import com.functionscout.backend.dto.FunctionData;
 import com.functionscout.backend.dto.GithubPomFileContentResponse;
 import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.functionscout.backend.dto.UsedFunctionDependencyFromDB;
 import com.functionscout.backend.dto.WebServiceClassData;
 import com.functionscout.backend.enums.DependencyType;
 import com.functionscout.backend.enums.Status;
-import com.functionscout.backend.model.Class;
 import com.functionscout.backend.model.Dependency;
-import com.functionscout.backend.model.Function;
 import com.functionscout.backend.model.WebService;
 import com.functionscout.backend.model.WebServiceFunctionDependency;
 import com.functionscout.backend.repository.ClassRepository;
@@ -20,6 +20,7 @@ import com.functionscout.backend.repository.DependencyRepository;
 import com.functionscout.backend.repository.FunctionRepository;
 import com.functionscout.backend.repository.JdbcClassRepository;
 import com.functionscout.backend.repository.JdbcFunctionRepository;
+import com.functionscout.backend.repository.JdbcWebServiceFunctionDependencyRepository;
 import com.functionscout.backend.repository.JdbcWebServiceRepository;
 import com.functionscout.backend.repository.WebServiceFunctionDependencyRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
@@ -90,6 +91,9 @@ public class WebServiceParser {
 
     @Autowired
     private WebServiceFunctionDependencyRepository webServiceFunctionDependencyRepository;
+
+    @Autowired
+    private JdbcWebServiceFunctionDependencyRepository jdbcWebServiceFunctionDependencyRepository;
 
     @Autowired
     private DependencyRepository dependencyRepository;
@@ -178,11 +182,28 @@ public class WebServiceParser {
 
         if (!isReverseScan) {
             saveFunctions(classDTOS, webService);
+            updateWebServiceStatusToSuccess(webService);
         }
 
         // TODO: Modify dependency type to internal
 
         FileUtils.deleteDirectory(directory);
+    }
+
+    private void reverseScan(final WebService webService) throws Exception {
+        final Optional<Dependency> dependency = dependencyRepository.findByName(webService.getName());
+
+        if (dependency.isPresent()) {
+            final List<WebService> webServices = jdbcWebServiceRepository.findAllByDependencyId(dependency.get().getId());
+
+            if (webServices.isEmpty()) {
+                return;
+            }
+
+            for (final WebService service : webServices) {
+                normalScan(service, true, webService.getId());
+            }
+        }
     }
 
     private void scanRepository(final String folderName,
@@ -319,13 +340,6 @@ public class WebServiceParser {
         }
     }
 
-    private void updateWebServiceStatusToFailed(final WebService webService) {
-        webService.setStatus(Status.FAILED.getCode());
-        webService.setUniqueHash(webService.getUuid());
-        webService.setDependencies(new HashSet<>());
-        webServiceRepository.save(webService);
-    }
-
     private void saveWebServiceFunctionDependencies(final List<UsedFunctionDependency> usedFunctionDependencies,
                                                     final WebService webService) {
         final List<UsedFunctionDependencyFromDB> usedFunctionDependencyFromDBS =
@@ -342,49 +356,41 @@ public class WebServiceParser {
             );
         }
 
-        webServiceFunctionDependencyRepository.saveAll(webServiceFunctionDependencies);
+        jdbcWebServiceFunctionDependencyRepository.saveAll(webServiceFunctionDependencies);
     }
 
     private void saveFunctions(final List<ClassDTO> classDTOS, final WebService webService) {
-        List<Class> classes = classDTOS.stream()
-                .map(classDTO -> new Class(classDTO.getClassName(), webService))
+        final List<ClassData> classDataList = classDTOS.stream()
+                .map(classDTO -> new ClassData(classDTO.getClassName(), webService.getId()))
                 .toList();
-        classes = classRepository.saveAll(classes);
-        classRepository.flush();
+        final List<ClassData> resultClassData = jdbcClassRepository.saveAll(classDataList, webService.getId());
 
         final Map<String, List<FunctionDTO>> classFunctionMap = classDTOS.stream()
                 .collect(Collectors.toMap(ClassDTO::getClassName, ClassDTO::getFunctionDTOList));
-        final List<Function> functions = classes.stream()
-                .flatMap(clazz -> classFunctionMap.get(clazz.getName())
+        final List<FunctionData> functionDataList = resultClassData.stream()
+                .flatMap(classData -> classFunctionMap.get(classData.getName())
                         .stream()
-                        .map(functionDTO -> new Function(
+                        .map(functionDTO -> new FunctionData(
+                                UUID.randomUUID().toString(),
                                 functionDTO.getName(),
                                 functionDTO.getSignature(),
                                 functionDTO.getReturnType(),
-                                clazz))
+                                classData.getServiceId()))
                 )
                 .collect(Collectors.toList());
 
-        functionRepository.saveAll(functions);
+        jdbcFunctionRepository.saveAll(functionDataList);
+    }
 
-        // TODO: Move this into its own function. Should not depend on saveFunctions to change the status of a service
+    private void updateWebServiceStatusToSuccess(final WebService webService) {
         webService.setStatus(Status.SUCCESS.getCode());
         webServiceRepository.save(webService);
     }
 
-    private void reverseScan(final WebService webService) throws Exception {
-        final Optional<Dependency> dependency = dependencyRepository.findByName(webService.getName());
-
-        if (dependency.isPresent()) {
-            final List<WebService> webServices = jdbcWebServiceRepository.findAllByDependencyId(dependency.get().getId());
-
-            if (webServices.isEmpty()) {
-                return;
-            }
-
-            for (final WebService service : webServices) {
-                normalScan(service, true, webService.getId());
-            }
-        }
+    private void updateWebServiceStatusToFailed(final WebService webService) {
+        webService.setStatus(Status.FAILED.getCode());
+        webService.setUniqueHash(webService.getUuid());
+        webService.setDependencies(new HashSet<>());
+        webServiceRepository.save(webService);
     }
 }

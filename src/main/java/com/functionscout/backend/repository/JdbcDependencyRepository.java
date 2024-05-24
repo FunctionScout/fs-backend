@@ -26,14 +26,14 @@ public class JdbcDependencyRepository {
     @Autowired
     private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
-    public static final String INSERT_DEPENDENCY_QUERY = """
-            INSERT IGNORE INTO Dependency (name, version, type)
-            VALUES
-            (:name, :version, :type)""";
-
-    public void saveAllDependencies(final List<DependencyDTO> dependencyDTOS) {
+    public void saveAll(final List<DependencyDTO> dependencyDTOS) {
+        final String insertQuery = """
+                INSERT IGNORE INTO Dependency (name, version, type)
+                VALUES
+                (:name, :version, :type)""";
         final SqlParameterSource[] batch = SqlParameterSourceUtils.createBatch(dependencyDTOS);
-        namedParameterJdbcTemplate.batchUpdate(INSERT_DEPENDENCY_QUERY, batch);
+
+        namedParameterJdbcTemplate.batchUpdate(insertQuery, batch);
     }
 
     public List<Dependency> findAllDependenciesByNameAndVersion(final List<DependencyDTO> dependencyDTOS) {
