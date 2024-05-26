@@ -6,7 +6,10 @@ import com.functionscout.backend.dto.ClassData;
 import com.functionscout.backend.dto.DependencyDTO;
 import com.functionscout.backend.dto.FunctionDTO;
 import com.functionscout.backend.dto.FunctionData;
+import com.functionscout.backend.dto.FunctionResponseFromDb;
+import com.functionscout.backend.dto.GithubCreateIssueRequest;
 import com.functionscout.backend.dto.GithubPomFileContentResponse;
+import com.functionscout.backend.dto.MismatchedWebServiceFunctionData;
 import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.functionscout.backend.dto.UsedFunctionDependencyFromDB;
 import com.functionscout.backend.dto.WebServiceClassData;
@@ -30,6 +33,7 @@ import org.apache.commons.io.FileUtils;
 import org.eclipse.jgit.api.Git;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.w3c.dom.Document;
@@ -57,6 +61,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
+
+import static com.functionscout.backend.constant.Constants.GITHUB_ISSUE_BODY_TEMPLATE;
+import static com.functionscout.backend.constant.Constants.GITHUB_ISSUE_TITLE;
 
 @Service
 @Slf4j
@@ -113,7 +120,8 @@ public class WebServiceParser {
     @Async
     public void processGithubUrl(final WebService webService) {
         try {
-            normalScan(webService, false, null);
+            // TODO: Come up with better naming
+            forwardScan(webService, false, null);
             reverseScan(webService);
         } catch (Exception ex) {
             ex.printStackTrace();
@@ -121,9 +129,9 @@ public class WebServiceParser {
         }
     }
 
-    private void normalScan(final WebService webService,
-                            final boolean isReverseScan,
-                            final Integer reverseWebServiceId) throws Exception {
+    private void forwardScan(final WebService webService,
+                             final boolean isReverseScan,
+                             final Integer reverseWebServiceId) throws Exception {
         final String tempDirectory = System.getProperty("java.io.tmpdir");
         final String folderName = tempDirectory.charAt(tempDirectory.length() - 1) == '/'
                 ? tempDirectory + UUID.randomUUID()
@@ -181,7 +189,7 @@ public class WebServiceParser {
         saveWebServiceFunctionDependencies(usedFunctionDependencies, webService);
 
         if (!isReverseScan) {
-            saveFunctions(classDTOS, webService);
+            saveClassesAndFunctions(classDTOS, webService);
             updateWebServiceStatusToSuccess(webService);
         }
 
@@ -201,7 +209,7 @@ public class WebServiceParser {
             }
 
             for (final WebService service : webServices) {
-                normalScan(service, true, webService.getId());
+                forwardScan(service, true, webService.getId());
             }
         }
     }
@@ -359,7 +367,7 @@ public class WebServiceParser {
         jdbcWebServiceFunctionDependencyRepository.saveAll(webServiceFunctionDependencies);
     }
 
-    private void saveFunctions(final List<ClassDTO> classDTOS, final WebService webService) {
+    private void saveClassesAndFunctions(final List<ClassDTO> classDTOS, final WebService webService) {
         final List<ClassData> classDataList = classDTOS.stream()
                 .map(classDTO -> new ClassData(classDTO.getClassName(), webService.getId()))
                 .toList();
@@ -367,7 +375,8 @@ public class WebServiceParser {
 
         final Map<String, List<FunctionDTO>> classFunctionMap = classDTOS.stream()
                 .collect(Collectors.toMap(ClassDTO::getClassName, ClassDTO::getFunctionDTOList));
-        final List<FunctionData> functionDataList = resultClassData.stream()
+        final List<FunctionData> scannedFunctionDataList = resultClassData.stream()
+                .filter(classData -> classFunctionMap.containsKey(classData.getName()))
                 .flatMap(classData -> classFunctionMap.get(classData.getName())
                         .stream()
                         .map(functionDTO -> new FunctionData(
@@ -375,11 +384,83 @@ public class WebServiceParser {
                                 functionDTO.getName(),
                                 functionDTO.getSignature(),
                                 functionDTO.getReturnType(),
-                                classData.getServiceId()))
+                                classData.getId()))
                 )
                 .collect(Collectors.toList());
 
-        jdbcFunctionRepository.saveAll(functionDataList);
+        compareWithFunctionsFromDb(scannedFunctionDataList, webService.getId());
+
+        jdbcFunctionRepository.saveAll(scannedFunctionDataList);
+    }
+
+    private void compareWithFunctionsFromDb(final List<FunctionData> scannedFunctionDataList,
+                                            final Integer serviceId) {
+        // Using a composite key to avoid clashes from other classes
+        final Map<String, List<FunctionResponseFromDb>> functionsFromDbMap = jdbcFunctionRepository.findAllByServiceId(serviceId)
+                .stream()
+                .collect(Collectors.groupingBy(functionResponseFromDb ->
+                        functionResponseFromDb.getName() + ":" + functionResponseFromDb.getClassId()
+                ));
+
+        if (!functionsFromDbMap.isEmpty()) {
+            final List<Integer> mismatchedFunctionIds = new ArrayList<>();
+
+            for (FunctionData scannedFunctionData : scannedFunctionDataList) {
+                final String key = scannedFunctionData.getName() + ":" + scannedFunctionData.getClassId();
+
+                if (functionsFromDbMap.containsKey(key)) {
+                    final List<FunctionResponseFromDb> functionResponseFromDbList = functionsFromDbMap.get(key);
+
+                    for (FunctionResponseFromDb functionResponseFromDb : functionResponseFromDbList) {
+                        if (!functionResponseFromDb.getSignature().equals(scannedFunctionData.getSignature()) ||
+                                !functionResponseFromDb.getReturnType().equals(scannedFunctionData.getReturnType())) {
+                            mismatchedFunctionIds.add(functionResponseFromDb.getId());
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!mismatchedFunctionIds.isEmpty()) {
+                alertDevelopers(
+                        jdbcWebServiceFunctionDependencyRepository.findAllDependentServicesForFunctions(mismatchedFunctionIds)
+                );
+            }
+
+            //TODO: Execute an update operation for mismatching function signatures
+        }
+    }
+
+    private void alertDevelopers(final List<MismatchedWebServiceFunctionData> mismatchedWebServiceFunctionDataList) {
+        for (final MismatchedWebServiceFunctionData mismatchedWebServiceFunctionData : mismatchedWebServiceFunctionDataList) {
+            final List<String> githubUrlComponents =
+                    githubUrlParser.parse(mismatchedWebServiceFunctionData.getGithubUrl());
+
+            final ResponseEntity<Object> responseEntity = githubClient.createIssueOnRepository(
+                    "Bearer " + githubPatToken,
+                    githubApiVersion,
+                    githubAcceptHeader,
+                    githubUrlComponents.get(0),
+                    githubUrlComponents.get(1),
+                    getGithubIssueRequestBody(mismatchedWebServiceFunctionData)
+            );
+
+            if (!responseEntity.getStatusCode().is2xxSuccessful()) {
+                log.error("Exception while creating a github issue. Details: \n" + mismatchedWebServiceFunctionData);
+            }
+        }
+    }
+
+    private GithubCreateIssueRequest getGithubIssueRequestBody(final MismatchedWebServiceFunctionData mismatchedWebServiceFunctionData) {
+        return new GithubCreateIssueRequest(
+                GITHUB_ISSUE_TITLE,
+                String.format(
+                        GITHUB_ISSUE_BODY_TEMPLATE,
+                        mismatchedWebServiceFunctionData.getFunctionName(),
+                        mismatchedWebServiceFunctionData.getFunctionSignature(),
+                        mismatchedWebServiceFunctionData.getDependencyName()
+                )
+        );
     }
 
     private void updateWebServiceStatusToSuccess(final WebService webService) {

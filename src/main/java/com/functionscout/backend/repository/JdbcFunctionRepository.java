@@ -2,6 +2,7 @@ package com.functionscout.backend.repository;
 
 import com.functionscout.backend.dto.FunctionData;
 import com.functionscout.backend.dto.FunctionResponseDTO;
+import com.functionscout.backend.dto.FunctionResponseFromDb;
 import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.functionscout.backend.dto.UsedFunctionDependencyFromDB;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -84,6 +85,19 @@ public class JdbcFunctionRepository {
         namedParameterJdbcTemplate.batchUpdate(insertQuery, batch);
     }
 
+    public List<FunctionResponseFromDb> findAllByServiceId(Integer serviceId) {
+        final String query = "select f.id, f.name, f.signature, f.returnType, f.classId from " +
+                "Class c " +
+                "inner join `Function` f on f.classId = c.id " +
+                "where c.serviceId = " + serviceId;
+
+        return namedParameterJdbcTemplate.query(
+                query,
+                new HashMap<>(),
+                new FunctionResponseFromDbMapper()
+        );
+    }
+
     private static final class FunctionResponseMapper implements RowMapper<FunctionResponseDTO> {
         public FunctionResponseDTO mapRow(final ResultSet rs, final int rowNum) throws SQLException {
             final FunctionResponseDTO functionResponseDTO = new FunctionResponseDTO();
@@ -102,6 +116,20 @@ public class JdbcFunctionRepository {
             usedFunctionDependencyFromDB.setFunctionId(rs.getInt("functionId"));
 
             return usedFunctionDependencyFromDB;
+        }
+    }
+
+    private static final class FunctionResponseFromDbMapper implements RowMapper<FunctionResponseFromDb> {
+        public FunctionResponseFromDb mapRow(final ResultSet rs, final int rowNum) throws SQLException {
+            final FunctionResponseFromDb functionResponseFromDb = new FunctionResponseFromDb();
+
+            functionResponseFromDb.setId(rs.getInt("id"));
+            functionResponseFromDb.setName(rs.getString("name"));
+            functionResponseFromDb.setSignature(rs.getString("signature"));
+            functionResponseFromDb.setReturnType(rs.getString("returnType"));
+            functionResponseFromDb.setClassId(rs.getInt("classId"));
+
+            return functionResponseFromDb;
         }
     }
 }
