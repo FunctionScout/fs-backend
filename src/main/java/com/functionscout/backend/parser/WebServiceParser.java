@@ -388,13 +388,17 @@ public class WebServiceParser {
                 )
                 .collect(Collectors.toList());
 
-        compareWithFunctionsFromDb(scannedFunctionDataList, webService.getId());
+        final List<FunctionData> mismatchedFunctions = computeFunctionSignatureMismatches(
+                scannedFunctionDataList,
+                webService.getId()
+        );
 
+        jdbcFunctionRepository.updateFunctionSignatures(mismatchedFunctions);
         jdbcFunctionRepository.saveAll(scannedFunctionDataList);
     }
 
-    private void compareWithFunctionsFromDb(final List<FunctionData> scannedFunctionDataList,
-                                            final Integer serviceId) {
+    private List<FunctionData> computeFunctionSignatureMismatches(final List<FunctionData> scannedFunctionDataList,
+                                                                  final Integer serviceId) {
         // Using a composite key to avoid clashes from other classes
         final Map<String, List<FunctionResponseFromDb>> functionsFromDbMap = jdbcFunctionRepository.findAllByServiceId(serviceId)
                 .stream()
@@ -402,33 +406,43 @@ public class WebServiceParser {
                         functionResponseFromDb.getName() + ":" + functionResponseFromDb.getClassId()
                 ));
 
-        if (!functionsFromDbMap.isEmpty()) {
-            final List<Integer> mismatchedFunctionIds = new ArrayList<>();
+        if (functionsFromDbMap.isEmpty()) {
+            return new ArrayList<>();
+        }
 
-            for (FunctionData scannedFunctionData : scannedFunctionDataList) {
-                final String key = scannedFunctionData.getName() + ":" + scannedFunctionData.getClassId();
+        final List<Integer> mismatchedFunctionIds = new ArrayList<>();
+        final List<FunctionData> mismatchedFunctions = new ArrayList<>();
 
-                if (functionsFromDbMap.containsKey(key)) {
-                    final List<FunctionResponseFromDb> functionResponseFromDbList = functionsFromDbMap.get(key);
+        for (FunctionData scannedFunctionData : scannedFunctionDataList) {
+            final String key = scannedFunctionData.getName() + ":" + scannedFunctionData.getClassId();
 
-                    for (FunctionResponseFromDb functionResponseFromDb : functionResponseFromDbList) {
-                        if (!functionResponseFromDb.getSignature().equals(scannedFunctionData.getSignature()) ||
-                                !functionResponseFromDb.getReturnType().equals(scannedFunctionData.getReturnType())) {
-                            mismatchedFunctionIds.add(functionResponseFromDb.getId());
-                            break;
-                        }
+            if (functionsFromDbMap.containsKey(key)) {
+                final List<FunctionResponseFromDb> functionResponseFromDbList = functionsFromDbMap.get(key);
+
+                for (FunctionResponseFromDb functionResponseFromDb : functionResponseFromDbList) {
+                    if (!functionResponseFromDb.getSignature().equals(scannedFunctionData.getSignature()) ||
+                            !functionResponseFromDb.getReturnType().equals(scannedFunctionData.getReturnType())) {
+                        mismatchedFunctionIds.add(functionResponseFromDb.getId());
+                        mismatchedFunctions.add(new FunctionData(
+                                functionResponseFromDb.getUuid(),
+                                scannedFunctionData.getName(),
+                                scannedFunctionData.getSignature(),
+                                scannedFunctionData.getReturnType(),
+                                scannedFunctionData.getClassId()
+                        ));
+                        break;
                     }
                 }
             }
-
-            if (!mismatchedFunctionIds.isEmpty()) {
-                alertDevelopers(
-                        jdbcWebServiceFunctionDependencyRepository.findAllDependentServicesForFunctions(mismatchedFunctionIds)
-                );
-            }
-
-            //TODO: Execute an update operation for mismatching function signatures
         }
+
+        if (!mismatchedFunctionIds.isEmpty()) {
+            alertDevelopers(
+                    jdbcWebServiceFunctionDependencyRepository.findAllDependentServicesForFunctions(mismatchedFunctionIds)
+            );
+        }
+
+        return mismatchedFunctions;
     }
 
     private void alertDevelopers(final List<MismatchedWebServiceFunctionData> mismatchedWebServiceFunctionDataList) {
