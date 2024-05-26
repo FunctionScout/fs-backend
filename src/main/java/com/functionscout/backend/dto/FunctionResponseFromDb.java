@@ -12,6 +12,7 @@ import lombok.Setter;
 public class FunctionResponseFromDb {
 
     private Integer id;
+    private String uuid;
     private String name;
     private String signature;
     private String returnType;

@@ -17,6 +17,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public class JdbcFunctionRepository {
@@ -85,8 +86,22 @@ public class JdbcFunctionRepository {
         namedParameterJdbcTemplate.batchUpdate(insertQuery, batch);
     }
 
+    public void updateFunctionSignatures(final List<FunctionData> mismatchedFunctions) {
+        final String query = "update `Function` set signature = :newSignature where uuid = :uuid";
+        final Map<String, String>[] parameterMapArray = new Map[mismatchedFunctions.size()];
+
+        for (int index = 0; index < mismatchedFunctions.size(); index++) {
+            parameterMapArray[index] = Map.of(
+                    "newSignature", mismatchedFunctions.get(index).getSignature(),
+                    "uuid", mismatchedFunctions.get(index).getUuid()
+            );
+        }
+
+        namedParameterJdbcTemplate.batchUpdate(query, parameterMapArray);
+    }
+
     public List<FunctionResponseFromDb> findAllByServiceId(Integer serviceId) {
-        final String query = "select f.id, f.name, f.signature, f.returnType, f.classId from " +
+        final String query = "select f.id, f.uuid, f.name, f.signature, f.returnType, f.classId from " +
                 "Class c " +
                 "inner join `Function` f on f.classId = c.id " +
                 "where c.serviceId = " + serviceId;
@@ -124,6 +139,7 @@ public class JdbcFunctionRepository {
             final FunctionResponseFromDb functionResponseFromDb = new FunctionResponseFromDb();
 
             functionResponseFromDb.setId(rs.getInt("id"));
+            functionResponseFromDb.setUuid(rs.getString("uuid"));
             functionResponseFromDb.setName(rs.getString("name"));
             functionResponseFromDb.setSignature(rs.getString("signature"));
             functionResponseFromDb.setReturnType(rs.getString("returnType"));
