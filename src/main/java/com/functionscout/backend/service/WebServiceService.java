@@ -1,13 +1,14 @@
 package com.functionscout.backend.service;
 
-import com.functionscout.backend.dto.DashboardResponseDTO;
 import com.functionscout.backend.dto.DependencyData;
 import com.functionscout.backend.dto.DependencyResponseDTO;
+import com.functionscout.backend.dto.DependentWebServicesDTO;
 import com.functionscout.backend.dto.FunctionDetailResponseDTO;
 import com.functionscout.backend.dto.FunctionResponseDTO;
 import com.functionscout.backend.dto.WebServiceDependencyDTO;
 import com.functionscout.backend.dto.WebServiceFunctionDependencyDTO;
 import com.functionscout.backend.dto.WebServiceRequest;
+import com.functionscout.backend.dto.WebServiceResponse;
 import com.functionscout.backend.enums.Status;
 import com.functionscout.backend.exception.BadRequestException;
 import com.functionscout.backend.model.Function;
@@ -17,6 +18,7 @@ import com.functionscout.backend.parser.WebServiceParser;
 import com.functionscout.backend.repository.FunctionRepository;
 import com.functionscout.backend.repository.JdbcDependencyRepository;
 import com.functionscout.backend.repository.JdbcFunctionRepository;
+import com.functionscout.backend.repository.JdbcWebServiceFunctionDependencyRepository;
 import com.functionscout.backend.repository.WebServiceRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -49,6 +51,9 @@ public class WebServiceService {
     @Autowired
     private GithubUrlParser githubUrlParser;
 
+    @Autowired
+    private JdbcWebServiceFunctionDependencyRepository jdbcWebServiceFunctionDependencyRepository;
+
     public void addService(final WebServiceRequest webServiceRequest) {
         validateAddServiceDTO(webServiceRequest);
 
@@ -73,7 +78,7 @@ public class WebServiceService {
         webServiceParser.processGithubUrl(webService.get());
     }
 
-    public List<DashboardResponseDTO> getAllWebServices() {
+    public List<WebServiceResponse> getAllWebServices() {
         return webServiceRepository.findAll().stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -144,17 +149,21 @@ public class WebServiceService {
     // TODO: Remove transactional and use a native join query to fetch the result. Do not eager load the dependencies!!!
     @Transactional
     public FunctionDetailResponseDTO getOneFunctionForService(final String functionId) {
-        final Optional<Function> function = functionRepository.findFunctionByUuid(functionId);
+        final Optional<Function> optionalFunction = functionRepository.findFunctionByUuid(functionId);
 
-        if (function.isEmpty()) {
+        if (optionalFunction.isEmpty()) {
             return new FunctionDetailResponseDTO();
         }
 
-        return new FunctionDetailResponseDTO(function.get());
+        final Function function = optionalFunction.get();
+        final List<DependentWebServicesDTO> dependentWebServicesDTOS =
+                jdbcWebServiceFunctionDependencyRepository.findAllDependentServicesForFunctionId(function.getId());
+
+        return new FunctionDetailResponseDTO(function, dependentWebServicesDTOS);
     }
 
-    private DashboardResponseDTO toDto(final WebService webService) {
-        return new DashboardResponseDTO(
+    private WebServiceResponse toDto(final WebService webService) {
+        return new WebServiceResponse(
                 webService.getUuid(),
                 webService.getGithubUrl(),
                 Status.getStatus(webService.getStatus()).name()

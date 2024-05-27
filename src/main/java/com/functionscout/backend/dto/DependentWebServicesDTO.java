@@ -9,8 +9,8 @@ import lombok.Setter;
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class DashboardResponseDTO {
+public class DependentWebServicesDTO {
+
     private String id;
     private String githubUrl;
-    private String status;
 }

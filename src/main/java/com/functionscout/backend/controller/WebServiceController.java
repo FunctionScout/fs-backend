@@ -1,6 +1,6 @@
 package com.functionscout.backend.controller;
 
-import com.functionscout.backend.dto.DashboardResponseDTO;
+import com.functionscout.backend.dto.WebServiceResponse;
 import com.functionscout.backend.dto.DependencyResponseDTO;
 import com.functionscout.backend.dto.FunctionDetailResponseDTO;
 import com.functionscout.backend.dto.FunctionResponseDTO;
@@ -32,7 +32,7 @@ public class WebServiceController {
 
     // TODO: Add pagination
     @GetMapping("/services")
-    public List<DashboardResponseDTO> getAllServices() {
+    public List<WebServiceResponse> getAllServices() {
         return webServiceService.getAllWebServices();
     }
 

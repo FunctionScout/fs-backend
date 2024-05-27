@@ -1,5 +1,6 @@
 package com.functionscout.backend.repository;
 
+import com.functionscout.backend.dto.DependentWebServicesDTO;
 import com.functionscout.backend.dto.MismatchedWebServiceFunctionData;
 import com.functionscout.backend.model.WebServiceFunctionDependency;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -58,6 +59,19 @@ public class JdbcWebServiceFunctionDependencyRepository {
         );
     }
 
+    public List<DependentWebServicesDTO> findAllDependentServicesForFunctionId(final Integer functionId) {
+        final String query = "select ws.uuid, ws.githubUrl from " +
+                "WebServiceFunctionDependency wsfd " +
+                "inner join WebService ws on ws.id = wsfd.dependentServiceId " +
+                "where wsfd.functionId = " + functionId;
+
+        return namedParameterJdbcTemplate.query(
+                query,
+                new HashMap<>(),
+                new DependentWebServicesDTOMapper()
+        );
+    }
+
     private static final class MismatchedWebServiceFunctionDataMapper implements RowMapper<MismatchedWebServiceFunctionData> {
         public MismatchedWebServiceFunctionData mapRow(final ResultSet rs, final int rowNum) throws SQLException {
             final MismatchedWebServiceFunctionData mismatchedWebServiceFunctionData = new MismatchedWebServiceFunctionData();
@@ -69,6 +83,17 @@ public class JdbcWebServiceFunctionDependencyRepository {
             mismatchedWebServiceFunctionData.setFunctionReturnType(rs.getString("functionReturnType"));
 
             return mismatchedWebServiceFunctionData;
+        }
+    }
+
+    private static final class DependentWebServicesDTOMapper implements RowMapper<DependentWebServicesDTO> {
+        public DependentWebServicesDTO mapRow(final ResultSet rs, final int rowNum) throws SQLException {
+            final DependentWebServicesDTO dependentWebServicesDTO = new DependentWebServicesDTO();
+
+            dependentWebServicesDTO.setId(rs.getString("uuid"));
+            dependentWebServicesDTO.setGithubUrl(rs.getString("githubUrl"));
+
+            return dependentWebServicesDTO;
         }
     }
 }
