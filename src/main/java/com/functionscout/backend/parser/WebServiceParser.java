@@ -193,7 +193,7 @@ public class WebServiceParser {
             updateWebServiceStatusToSuccess(webService);
         }
 
-        // TODO: Modify dependency type to internal
+        dependencyService.updateDependencyType(webService.getName());
 
         FileUtils.deleteDirectory(directory);
     }
