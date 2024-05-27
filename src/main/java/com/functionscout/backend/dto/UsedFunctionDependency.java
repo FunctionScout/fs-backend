@@ -12,5 +12,6 @@ import lombok.Setter;
 public class UsedFunctionDependency {
 
     private Integer webServiceDependencyId;
+    private String className;
     private String signature;
 }

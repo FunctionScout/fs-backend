@@ -4,6 +4,7 @@ import com.functionscout.backend.dto.ClassDTO;
 import com.functionscout.backend.dto.FunctionDTO;
 import com.functionscout.backend.dto.UsedFunctionDependency;
 import com.github.javaparser.StaticJavaParser;
+import com.github.javaparser.ast.AccessSpecifier;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
@@ -146,10 +147,12 @@ public class ClassParser {
                         signatureBuilder.append(")");
 
                         final String variableType = fieldDeclarationMap.get(variableName).getTypeAsString();
-                        final Integer serviceId = classMap.get(usedImportsMap.get(variableType));
+                        final String className = usedImportsMap.get(variableType);
+                        final Integer serviceId = classMap.get(className);
 
                         usedFunctionDependencies.add(new UsedFunctionDependency(
                                 serviceId,
+                                className,
                                 signatureBuilder.toString())
                         );
                     } else {
@@ -165,18 +168,17 @@ public class ClassParser {
     private String resolveArgumentType(final String argument,
                                        final Expression expression,
                                        final Map<String, VariableDeclarator> fieldDeclarationMap) {
-        Optional<Node> optionalNode = expression.getParentNode();
-        Optional<Node> previousCheckpointNode = Optional.empty();
+        Optional<Node> node = expression.getParentNode();
+        Optional<Node> previousNode = Optional.empty();
 
         // 1. Function body
-        while (optionalNode.isPresent()) {
-            final Node node = optionalNode.get();
+        while (node.isPresent()) {
+            final Node unWrappedNode = node.get();
 
-            // Checkpoint
-            if (node instanceof BlockStmt) {
-                previousCheckpointNode = optionalNode;
+            if (unWrappedNode instanceof BlockStmt) {
+                previousNode = node;
 
-                for (Node blockChildNode : node.getChildNodes()) {
+                for (Node blockChildNode : unWrappedNode.getChildNodes()) {
                     if (blockChildNode instanceof ExpressionStmt) {
                         blockChildNode = ((ExpressionStmt) blockChildNode).asExpressionStmt();
                         Optional<VariableDeclarator> matchedVariableDeclarator = blockChildNode.findAll(VariableDeclarator.class)
@@ -193,20 +195,19 @@ public class ClassParser {
                 break;
             }
 
-            optionalNode = node.getParentNode();
+            node = unWrappedNode.getParentNode();
         }
 
-        if (previousCheckpointNode.isPresent()) {
-            optionalNode = previousCheckpointNode.get().getParentNode();
+        if (previousNode.isPresent()) {
+            node = previousNode.get().getParentNode();
         }
 
         // 2. Function arguments
-        while (optionalNode.isPresent()) {
-            final Node node = optionalNode.get();
+        while (node.isPresent()) {
+            final Node unWrappedNode = node.get();
 
-            // Checkpoint
-            if (node instanceof MethodDeclaration) {
-                final NodeList<Parameter> parameters = ((MethodDeclaration) node).getParameters();
+            if (unWrappedNode instanceof MethodDeclaration) {
+                final NodeList<Parameter> parameters = ((MethodDeclaration) unWrappedNode).getParameters();
 
                 for (Parameter parameter : parameters) {
                     if (parameter.getNameAsString().equals(argument)) {
@@ -217,7 +218,7 @@ public class ClassParser {
                 break;
             }
 
-            optionalNode = node.getParentNode();
+            node = unWrappedNode.getParentNode();
         }
 
         // 3. Class fields
@@ -242,13 +243,17 @@ public class ClassParser {
         public void visit(MethodDeclaration md, List<FunctionDTO> collector) {
             super.visit(md, collector);
 
-            String signature = md.getDeclarationAsString(false, false, false);
+            if (md.getAccessSpecifier().equals(AccessSpecifier.PUBLIC)) {
+                final String signature = md.getDeclarationAsString(
+                        false, false, false
+                );
 
-            collector.add(new FunctionDTO(
-                    md.getNameAsString(),
-                    signature.substring(signature.indexOf(" ") + 1),
-                    md.getTypeAsString()
-            ));
+                collector.add(new FunctionDTO(
+                        md.getNameAsString(),
+                        signature.substring(signature.indexOf(" ") + 1),
+                        md.getTypeAsString()
+                ));
+            }
         }
     }
 }

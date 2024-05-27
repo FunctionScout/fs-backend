@@ -132,7 +132,7 @@ public class WebServiceService {
 
     public List<FunctionResponseDTO> getServiceFunctions(final String serviceId) {
         final WebService webService = findServiceIfExists(serviceId);
-        final List<FunctionResponseDTO> functions = jdbcFunctionRepository.findAllFunctionsByServiceId(webService.getId());
+        final List<FunctionResponseDTO> functions = jdbcFunctionRepository.findAllUsedFunctionsByServiceId(webService.getId());
 
         if (functions != null && functions.isEmpty()) {
             return new ArrayList<>();
