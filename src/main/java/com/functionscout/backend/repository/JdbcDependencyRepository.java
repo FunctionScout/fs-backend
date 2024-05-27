@@ -5,7 +5,7 @@ import com.functionscout.backend.dto.DependencyData;
 import com.functionscout.backend.dto.FunctionResponseDTO;
 import com.functionscout.backend.dto.WebServiceDependencyDTO;
 import com.functionscout.backend.dto.WebServiceFunctionDependencyDTO;
-import com.functionscout.backend.enums.Status;
+import com.functionscout.backend.enums.DependencyType;
 import com.functionscout.backend.model.Dependency;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.RowMapper;
@@ -19,6 +19,7 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Repository
 public class JdbcDependencyRepository {
@@ -107,6 +108,17 @@ public class JdbcDependencyRepository {
         );
     }
 
+    public void updateDependencyType(final String dependencyName) {
+        final String query = "update Dependency set type = :type where name = :dependencyName and type = :currentType";
+        final Map<String, Object> parameterMap = Map.of(
+                "type", DependencyType.INTERNAL.getType(),
+                "dependencyName", dependencyName,
+                "currentType", DependencyType.EXTERNAL.getType()
+        );
+
+        namedParameterJdbcTemplate.update(query, parameterMap);
+    }
+
     private static final class DependencyMapper implements RowMapper<Dependency> {
         public Dependency mapRow(final ResultSet rs, final int rowNum) throws SQLException {
             final Dependency dependency = new Dependency();
@@ -129,7 +141,7 @@ public class JdbcDependencyRepository {
             webServiceDependencyDTO.setDependencyData(new DependencyData(
                     rs.getString("name"),
                     rs.getString("version"),
-                    Status.getStatus(rs.getShort("type")).name()
+                    DependencyType.getDependencyType(rs.getShort("type")).name()
             ));
 
             return webServiceDependencyDTO;

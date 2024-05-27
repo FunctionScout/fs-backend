@@ -34,4 +34,8 @@ public class DependencyService {
         webService.setDependencies(new HashSet<>(dependencies));
         webServiceRepository.save(webService);
     }
+
+    public void updateDependencyType(final String dependencyName) {
+        jdbcDependencyRepository.updateDependencyType(dependencyName);
+    }
 }
