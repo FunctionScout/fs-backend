@@ -5,13 +5,13 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.util.List;
-
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
-public class WebServiceResponse<T> {
+public class WebServiceResponse {
+
+    private String id;
     private String githubUrl;
-    private List<T> object;
+    private String status;
 }
