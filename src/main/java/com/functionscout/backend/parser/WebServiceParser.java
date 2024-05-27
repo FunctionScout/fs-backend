@@ -351,7 +351,7 @@ public class WebServiceParser {
     private void saveWebServiceFunctionDependencies(final List<UsedFunctionDependency> usedFunctionDependencies,
                                                     final WebService webService) {
         final List<UsedFunctionDependencyFromDB> usedFunctionDependencyFromDBS =
-                jdbcFunctionRepository.findAllFunctionsByServiceIdAndFunctionId(usedFunctionDependencies);
+                jdbcFunctionRepository.findAllFunctionsByServiceIdAndSignature(usedFunctionDependencies);
         final List<WebServiceFunctionDependency> webServiceFunctionDependencies = new ArrayList<>();
 
         for (UsedFunctionDependencyFromDB usedFunctionDependencyFromDB : usedFunctionDependencyFromDBS) {
@@ -365,6 +365,12 @@ public class WebServiceParser {
         }
 
         jdbcWebServiceFunctionDependencyRepository.saveAll(webServiceFunctionDependencies);
+        jdbcFunctionRepository.updateFunctionsAsUsed(
+                usedFunctionDependencyFromDBS
+                        .stream()
+                        .map(UsedFunctionDependencyFromDB::getFunctionId)
+                        .collect(Collectors.toList())
+        );
     }
 
     private void saveClassesAndFunctions(final List<ClassDTO> classDTOS, final WebService webService) {

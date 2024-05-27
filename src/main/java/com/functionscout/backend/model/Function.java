@@ -34,6 +34,8 @@ public class Function {
 
     private String returnType;
 
+    private boolean isUsed;
+
     private Timestamp createDT;
 
     private Timestamp updateDT;
@@ -48,6 +50,7 @@ public class Function {
         this.name = name;
         this.signature = signature;
         this.returnType = returnType;
+        this.isUsed = false;
         this.createDT = Timestamp.from(Instant.now());
         this.updateDT = Timestamp.from(Instant.now());
         this.clazz = clazz;

@@ -25,11 +25,11 @@ public class JdbcFunctionRepository {
     @Autowired
     private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
-    public List<FunctionResponseDTO> findAllFunctionsByServiceId(final Integer serviceId) {
+    public List<FunctionResponseDTO> findAllUsedFunctionsByServiceId(final Integer serviceId) {
         final String query = "select f.uuid as functionId, f.name as functionName, c.name as className " +
                 "from `Function` f " +
                 "inner join Class c on f.classId = c.id " +
-                "where c.serviceId = " + serviceId;
+                "where f.isUsed = true and c.serviceId = " + serviceId;
 
         return namedParameterJdbcTemplate.query(
                 query,
@@ -38,7 +38,7 @@ public class JdbcFunctionRepository {
         );
     }
 
-    public List<UsedFunctionDependencyFromDB> findAllFunctionsByServiceIdAndFunctionId(final List<UsedFunctionDependency> usedFunctionDependencies) {
+    public List<UsedFunctionDependencyFromDB> findAllFunctionsByServiceIdAndSignature(final List<UsedFunctionDependency> usedFunctionDependencies) {
         if (usedFunctionDependencies.isEmpty()) {
             return new ArrayList<>();
         }
@@ -49,7 +49,7 @@ public class JdbcFunctionRepository {
                 "inner join WebService ws on ws.id = c.serviceId " +
                 "inner join Dependency d on d.name = ws.name " +
                 "where ";
-        final String whereClause = "(c.serviceId = %s and f.signature = '%s')";
+        final String whereClause = "(c.serviceId = %s and c.name = '%s' and f.signature = '%s')";
         final StringBuilder whereClauseBuilder = new StringBuilder();
         int usedFunctionDependenciesSize = usedFunctionDependencies.size();
 
@@ -58,6 +58,7 @@ public class JdbcFunctionRepository {
                 whereClauseBuilder.append(String.format(
                         whereClause,
                         usedFunctionDependency.getWebServiceDependencyId(),
+                        usedFunctionDependency.getClassName(),
                         usedFunctionDependency.getSignature())
                 );
 
@@ -76,13 +77,13 @@ public class JdbcFunctionRepository {
         );
     }
 
-    public void saveAll(final List<FunctionData> functionDataLis) {
+    public void saveAll(final List<FunctionData> functionDataList) {
         final String insertQuery = """
-                INSERT IGNORE `Function` (uuid, classId, name, signature, returnType)
+                INSERT IGNORE `Function` (uuid, classId, name, signature, returnType, isUsed)
                 VALUES
-                (:uuid, :classId, :name, :signature, :returnType)
+                (:uuid, :classId, :name, :signature, :returnType, false)
                 """;
-        final SqlParameterSource[] batch = SqlParameterSourceUtils.createBatch(functionDataLis);
+        final SqlParameterSource[] batch = SqlParameterSourceUtils.createBatch(functionDataList);
         namedParameterJdbcTemplate.batchUpdate(insertQuery, batch);
     }
 
@@ -111,6 +112,19 @@ public class JdbcFunctionRepository {
                 new HashMap<>(),
                 new FunctionResponseFromDbMapper()
         );
+    }
+
+    public void updateFunctionsAsUsed(final List<Integer> functionIds) {
+        final String query = "update `Function` set isUsed = true where id = :id";
+        final Map<String, Integer>[] parameterMapArray = new Map[functionIds.size()];
+
+        for (int index = 0; index < functionIds.size(); index++) {
+            parameterMapArray[index] = Map.of(
+                    "id", functionIds.get(index)
+            );
+        }
+
+        namedParameterJdbcTemplate.batchUpdate(query, parameterMapArray);
     }
 
     private static final class FunctionResponseMapper implements RowMapper<FunctionResponseDTO> {
