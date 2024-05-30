@@ -135,9 +135,13 @@ public class WebServiceService {
         return dependencyResponseDTOS;
     }
 
-    public List<FunctionResponseDTO> getServiceFunctions(final String serviceId) {
+    public List<FunctionResponseDTO> getFunctions(final String serviceId,
+                                                  final boolean isUsed) {
         final WebService webService = findServiceIfExists(serviceId);
-        final List<FunctionResponseDTO> functions = jdbcFunctionRepository.findAllUsedFunctionsByServiceId(webService.getId());
+        final List<FunctionResponseDTO> functions = jdbcFunctionRepository.findAllUsedFunctionsByServiceId(
+                webService.getId(),
+                isUsed
+        );
 
         if (functions != null && functions.isEmpty()) {
             return new ArrayList<>();

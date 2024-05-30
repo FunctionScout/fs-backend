@@ -1,10 +1,10 @@
 package com.functionscout.backend.controller;
 
-import com.functionscout.backend.dto.WebServiceResponse;
 import com.functionscout.backend.dto.DependencyResponseDTO;
 import com.functionscout.backend.dto.FunctionDetailResponseDTO;
 import com.functionscout.backend.dto.FunctionResponseDTO;
 import com.functionscout.backend.dto.WebServiceRequest;
+import com.functionscout.backend.dto.WebServiceResponse;
 import com.functionscout.backend.service.WebServiceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -12,7 +12,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -20,7 +19,6 @@ import java.util.Map;
 
 @CrossOrigin
 @RestController
-@RequestMapping
 public class WebServiceController {
     @Autowired
     private WebServiceService webServiceService;
@@ -44,7 +42,13 @@ public class WebServiceController {
 
     @GetMapping("/services/{serviceId}/functions")
     public Map<String, Object> getServiceFunctions(@PathVariable(name = "serviceId") String serviceId) {
-        final List<FunctionResponseDTO> functionResponseDTOS = webServiceService.getServiceFunctions(serviceId);
+        final List<FunctionResponseDTO> functionResponseDTOS = webServiceService.getFunctions(serviceId, true);
+        return Map.of("functions", functionResponseDTOS);
+    }
+
+    @GetMapping("/services/{serviceId}/unused-code")
+    public Map<String, Object> getUnusedCode(@PathVariable(name = "serviceId") String serviceId) {
+        final List<FunctionResponseDTO> functionResponseDTOS = webServiceService.getFunctions(serviceId, false);
         return Map.of("functions", functionResponseDTOS);
     }
 

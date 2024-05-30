@@ -25,14 +25,15 @@ public class JdbcFunctionRepository {
     @Autowired
     private NamedParameterJdbcTemplate namedParameterJdbcTemplate;
 
-    public List<FunctionResponseDTO> findAllUsedFunctionsByServiceId(final Integer serviceId) {
+    public List<FunctionResponseDTO> findAllUsedFunctionsByServiceId(final Integer serviceId,
+                                                                     final boolean isUsed) {
         final String query = "select f.uuid as functionId, f.name as functionName, c.name as className " +
                 "from `Function` f " +
                 "inner join Class c on f.classId = c.id " +
-                "where f.isUsed = true and c.serviceId = " + serviceId;
+                "where f.isUsed = %s and c.serviceId = %s";
 
         return namedParameterJdbcTemplate.query(
-                query,
+                String.format(query, isUsed, serviceId),
                 new HashMap<>(),
                 new FunctionResponseMapper()
         );
